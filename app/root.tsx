@@ -7,7 +7,7 @@ import {
 } from "react-router";
 import { AppProvider as PolarisProvider } from "@shopify/polaris";
 import translations from "@shopify/polaris/locales/en.json";
-import "@shopify/polaris/build/styles.css";
+import "@shopify/polaris/dist/styles.css";
 
 export default function App() {
   return (

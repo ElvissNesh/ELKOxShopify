@@ -7,7 +7,8 @@ import {
 } from "react-router";
 import { AppProvider as PolarisProvider } from "@shopify/polaris";
 import translations from "@shopify/polaris/locales/en.json";
-import "@shopify/polaris/dist/styles.css";
+// This is the specific path we found:
+import "@shopify/polaris/build/esm/styles.css"; 
 
 export default function App() {
   return (

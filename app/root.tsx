@@ -8,9 +8,6 @@ import {
 import { AppProvider as PolarisProvider } from "@shopify/polaris";
 import translations from "@shopify/polaris/locales/en.json";
 
-// We are NOT importing the CSS here to stop the "Module Not Found" error.
-// The Polaris Provider will handle the component logic.
-
 export default function App() {
   return (
     <html lang="en">
@@ -18,6 +15,11 @@ export default function App() {
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width,initial-scale=1" />
         <link rel="preconnect" href="https://cdn.shopify.com/" />
+        {/* We load the styles directly from Shopify's CDN to bypass local module errors */}
+        <link
+          rel="stylesheet"
+          href="https://unpkg.com/@shopify/polaris@12.0.0/build/esm/styles.css"
+        />
         <link
           rel="stylesheet"
           href="https://cdn.shopify.com/static/fonts/inter/v4/styles.css"

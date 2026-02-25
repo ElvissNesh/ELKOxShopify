@@ -1,3 +1,4 @@
+import "@shopify/polaris/build/styles.css";
 import { useState, useCallback } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { useLoaderData, useActionData, useSubmit, useNavigation } from "react-router";

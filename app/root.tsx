@@ -7,8 +7,9 @@ import {
 } from "react-router";
 import { AppProvider as PolarisProvider } from "@shopify/polaris";
 import translations from "@shopify/polaris/locales/en.json";
-// This is the specific path we found:
-import "@shopify/polaris/build/esm/styles.css"; 
+
+// We are NOT importing the CSS here to stop the "Module Not Found" error.
+// The Polaris Provider will handle the component logic.
 
 export default function App() {
   return (

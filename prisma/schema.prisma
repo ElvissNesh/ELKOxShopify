@@ -32,3 +32,11 @@ model Session {
   refreshToken        String?
   refreshTokenExpires DateTime?
 }
+
+model StoreConfiguration {
+  id          String   @id @default(uuid())
+  shop        String   @unique
+  elkoApiKey  String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

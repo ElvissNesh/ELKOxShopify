@@ -256,8 +256,15 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
              const price = productData.discountPrice || productData.price;
              if (price) {
                   await admin.graphql(
-                    `mutation productVariantUpdate($input: ProductVariantInput!) {
-                      productVariantUpdate(input: $input) {
+                    `mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+                      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+                        productVariants {
+                          id
+                          price
+                          inventoryItem {
+                            id
+                          }
+                        }
                         userErrors {
                           field
                           message
@@ -266,10 +273,13 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                     }`,
                     {
                         variables: {
-                            input: {
-                                id: variantId,
-                                price: String(price)
-                            }
+                            productId: productId,
+                            variants: [
+                                {
+                                    id: variantId,
+                                    price: String(price)
+                                }
+                            ]
                         }
                     }
                   );

@@ -76,7 +76,7 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
 
         // Check if product exists using the elko_id metafield
         const existingProductResponse = await admin.graphql(
-          `query ($key: String!, $value: String!) {
+          `query ($query: String!) {
             products(first: 1, query: $query) {
               edges {
                 node {
@@ -92,8 +92,6 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
           }`,
           {
             variables: {
-              key: "elko_integration.elko_id",
-              value: elkoCode,
               query: `metafield:elko_integration.elko_id:${elkoCode}`
             },
           }

@@ -11,10 +11,16 @@ import {
   Banner,
   BlockStack,
   Text,
+  List,
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { createElkoMetafieldDefinitions } from "../utils/metafields.server";
+import {
+  fetchElkoProducts,
+  syncElkoProduct,
+  getShopifyLocation,
+} from "../utils/elko.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -37,6 +43,60 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { status: "success", intent: "initialize_metafields" };
   }
 
+  if (intent === "import_products") {
+    const elkoCodesInput = String(formData.get("elkoCodes") || "");
+    const elkoCodes = elkoCodesInput
+      .split(/[\n,]+/)
+      .map((code) => code.trim())
+      .filter((code) => code.length > 0);
+
+    if (elkoCodes.length === 0) {
+      return { status: "error", intent: "import_products", message: "No Elko codes provided." };
+    }
+
+    try {
+      // Fetch products from Elko
+      const products = await fetchElkoProducts(session.shop, elkoCodes);
+
+      if (products.length === 0) {
+          return { status: "error", intent: "import_products", message: "No products found in Elko for the provided codes." };
+      }
+
+      // Get location for inventory
+      const locationId = await getShopifyLocation(admin);
+
+      // Sync each product
+      let successCount = 0;
+      let failCount = 0;
+      const errors = [];
+
+      for (const product of products) {
+        try {
+          await syncElkoProduct(admin, product, locationId);
+          successCount++;
+        } catch (error: any) {
+          console.error(`Failed to sync product ${product.id}:`, error);
+          failCount++;
+          errors.push(`ID ${product.id}: ${error.message}`);
+        }
+      }
+
+      if (failCount > 0) {
+          return {
+              status: "partial_success",
+              intent: "import_products",
+              message: `Imported ${successCount} products. Failed: ${failCount}.`,
+              errors
+          };
+      }
+
+      return { status: "success", intent: "import_products", message: `Successfully imported ${successCount} products.` };
+    } catch (error: any) {
+      console.error("Import failed:", error);
+      return { status: "error", intent: "import_products", message: error.message };
+    }
+  }
+
   const elkoApiKey = String(formData.get("elkoApiKey") || "");
 
   await prisma.storeConfiguration.upsert({
@@ -50,10 +110,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
 export default function Settings() {
   const { elkoApiKey } = useLoaderData<typeof loader>();
-  const actionData = useActionData<typeof action>();
+  const actionData = useActionData<any>(); // Using any for easier access to custom props
   const [apiKey, setApiKey] = useState(elkoApiKey);
+  const [elkoCodes, setElkoCodes] = useState("");
 
   const handleChange = useCallback((newValue: string) => setApiKey(newValue), []);
+  const handleCodesChange = useCallback((newValue: string) => setElkoCodes(newValue), []);
 
   return (
     <Page title="Elko Integration Settings">
@@ -66,21 +128,67 @@ export default function Settings() {
             {actionData?.status === "success" && actionData?.intent === "initialize_metafields" && (
               <Banner tone="success" title="Metafields initialized successfully" />
             )}
+             {actionData?.intent === "import_products" && (
+              <Banner
+                tone={actionData.status === "success" ? "success" : "critical"}
+                title={actionData.message}
+              >
+                 {actionData.errors && actionData.errors.length > 0 && (
+                    <List type="bullet">
+                        {actionData.errors.map((err: string, index: number) => (
+                            <List.Item key={index}>{err}</List.Item>
+                        ))}
+                    </List>
+                 )}
+              </Banner>
+            )}
+
             <Card>
-              <Form method="post">
-                <FormLayout>
-                  <TextField
-                    label="Elko API Key"
-                    name="elkoApiKey"
-                    value={apiKey}
-                    onChange={handleChange}
-                    autoComplete="off"
-                  />
-                  <Button submit variant="primary">
-                    Save
-                  </Button>
-                </FormLayout>
-              </Form>
+              <BlockStack gap="200">
+                <Text as="h2" variant="headingMd">
+                  API Configuration
+                </Text>
+                <Form method="post">
+                  <FormLayout>
+                    <TextField
+                      label="Elko API Key"
+                      name="elkoApiKey"
+                      value={apiKey}
+                      onChange={handleChange}
+                      autoComplete="off"
+                    />
+                    <Button submit variant="primary">
+                      Save
+                    </Button>
+                  </FormLayout>
+                </Form>
+              </BlockStack>
+            </Card>
+
+            <Card>
+              <BlockStack gap="200">
+                <Text as="h2" variant="headingMd">
+                  Manual Product Import
+                </Text>
+                <Text as="p" variant="bodyMd">
+                  Enter comma-separated ELKO IDs to import or update products in Shopify.
+                </Text>
+                <Form method="post">
+                    <input type="hidden" name="intent" value="import_products" />
+                    <FormLayout>
+                        <TextField
+                            label="Elko Codes"
+                            name="elkoCodes"
+                            value={elkoCodes}
+                            onChange={handleCodesChange}
+                            multiline={4}
+                            autoComplete="off"
+                            helpText="e.g. 101, 102, 103"
+                        />
+                        <Button submit>Import</Button>
+                    </FormLayout>
+                </Form>
+              </BlockStack>
             </Card>
 
             <Card>

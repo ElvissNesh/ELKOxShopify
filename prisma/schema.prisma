@@ -39,3 +39,12 @@ model StoreConfiguration {
   elkoApiKey  String
   locationId  String?
 }
+
+model AttributeMapping {
+  id               String @id @default(uuid())
+  shop             String
+  shopifyNamespace String
+  shopifyKey       String
+  elkoAttribute    String
+  metafieldType    String @default("single_line_text_field")
+}

@@ -35,6 +35,9 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
       throw new Error("ELKO API Key not configured.");
     }
 
+    // Fetch mappings for the current shop
+    const mappings = await prisma.attributeMapping.findMany({ where: { shop } });
+
     // Step A (Fetcher): Fetch data from ELKO
     // Using a POST request or GET with params as specified. Prompt says "append repeating query parameters".
     const elkoUrl = new URL("https://api.elko.cloud/v3.0/api/Catalog/Products");
@@ -198,6 +201,35 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
 
         // Step D (Metafields): Set elko_integration.is_elko_product and elko_integration.elko_id
         console.log(`Setting metafields for product: ${productId}`);
+
+        const dynamicMetafields = mappings.map(m => ({
+          ownerId: productId,
+          namespace: m.shopifyNamespace,
+          key: m.shopifyKey,
+          value: String((productData as any)[m.elkoAttribute] || ""),
+          type: "single_line_text_field"
+        })).filter(meta => meta.value !== "");
+
+        console.log(`[Sync] Mapping ${dynamicMetafields.length} custom attributes for ${elkoCode}.`);
+
+        const metafields = [
+            {
+                ownerId: productId,
+                namespace: "elko_integration",
+                key: "is_elko_product",
+                value: "true",
+                type: "boolean"
+            },
+            {
+                ownerId: productId,
+                namespace: "elko_integration",
+                key: "elko_id",
+                value: elkoCode,
+                type: "single_line_text_field"
+            },
+            ...dynamicMetafields
+        ];
+
         const metafieldsSetResponse = await admin.graphql(
             `mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
               metafieldsSet(metafields: $metafields) {
@@ -209,22 +241,7 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
             }`,
             {
                 variables: {
-                    metafields: [
-                        {
-                            ownerId: productId,
-                            namespace: "elko_integration",
-                            key: "is_elko_product",
-                            value: "true",
-                            type: "boolean"
-                        },
-                        {
-                            ownerId: productId,
-                            namespace: "elko_integration",
-                            key: "elko_id",
-                            value: elkoCode,
-                            type: "single_line_text_field"
-                        }
-                    ]
+                    metafields
                 }
             }
         );

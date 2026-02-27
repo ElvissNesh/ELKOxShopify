@@ -338,7 +338,7 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                  const inventoryItemId = variantJson.data?.productVariant?.inventoryItem?.id;
 
                  if (inventoryItemId) {
-                     console.log(`Inventory Item ID: ${inventoryItemId}. Enabling tracking...`);
+                     console.log(`Inventory Item ID: ${inventoryItemId}. Enabling tracking and checking stocking status...`);
 
                      // Enable inventory tracking
                      const inventoryItemUpdateResponse = await admin.graphql(
@@ -369,6 +369,39 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                         console.error(`Inventory tracking enable failed: ${JSON.stringify(invUpdateJson.data.inventoryItemUpdate.userErrors)}`);
                      } else {
                         console.log("Inventory tracking enabled.");
+                     }
+
+                     // Activate inventory at location if needed
+                     console.log(`Ensuring inventory item is stocked at location: ${locationId}`);
+                     const activateResponse = await admin.graphql(
+                         `mutation inventoryBulkToggleActivation($inventoryItemId: ID!, $inventoryItemUpdates: [InventoryBulkToggleActivationInput!]!) {
+                           inventoryBulkToggleActivation(inventoryItemId: $inventoryItemId, inventoryItemUpdates: $inventoryItemUpdates) {
+                             inventoryItem {
+                               id
+                             }
+                             userErrors {
+                               field
+                               message
+                             }
+                           }
+                         }`,
+                         {
+                           variables: {
+                             inventoryItemId: inventoryItemId,
+                             inventoryItemUpdates: [
+                               {
+                                 locationId: locationId,
+                                 activate: true
+                               }
+                             ]
+                           }
+                         }
+                     );
+                     const activateJson = await activateResponse.json();
+                     if (activateJson.data?.inventoryBulkToggleActivation?.userErrors?.length > 0) {
+                         console.warn(`Inventory activation warning: ${JSON.stringify(activateJson.data.inventoryBulkToggleActivation.userErrors)}`);
+                     } else {
+                         console.log("Inventory item activated at location.");
                      }
 
                      console.log(`Setting inventory quantity to ${quantityToSet} at location ${locationId}`);

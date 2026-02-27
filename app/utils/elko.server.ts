@@ -11,6 +11,7 @@ interface ElkoProduct {
   discountPrice?: string; // Assuming string or number, will convert
   availableQuantity?: number;
   quantity?: string; // Added to support quantity field
+  Quantity?: string | number; // Added to support potential PascalCase from .NET API
 }
 
 export async function syncElkoProducts(shop: string, elkoIds: string[], admin: any) {
@@ -330,7 +331,19 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                  }
 
                  // 3. Set Quantities via inventorySetQuantities
-                 const quantity = productData.quantity !== undefined ? parseInt(productData.quantity, 10) : 0;
+                 // Robustly parse quantity, handling casing (quantity vs Quantity) and null/undefined
+                 let rawQuantity = productData.quantity;
+                 if (rawQuantity === undefined || rawQuantity === null) {
+                    rawQuantity = productData.Quantity as string;
+                 }
+
+                 let quantity = 0;
+                 if (rawQuantity !== undefined && rawQuantity !== null) {
+                     const parsed = parseInt(String(rawQuantity), 10);
+                     if (!isNaN(parsed)) {
+                         quantity = parsed;
+                     }
+                 }
 
                  // Ensure locationId is valid (it should be as we fetched it earlier, but checking handles safety)
                  if (locationId) {

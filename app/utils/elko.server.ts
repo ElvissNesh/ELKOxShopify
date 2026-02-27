@@ -7,7 +7,6 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
   };
 
   try {
-    // 1. Fetch Store Config
     const storeConfig = await prisma.storeConfiguration.findUnique({
       where: { shop },
     });
@@ -16,7 +15,6 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
       throw new Error("ELKO API Key not configured.");
     }
 
-    // 2. Fetch data from ELKO
     const elkoUrl = new URL("https://api.elko.cloud/v3.0/api/Catalog/Products");
     elkoIds.forEach((id) => elkoUrl.searchParams.append("elkoCode", id.trim()));
 
@@ -31,11 +29,10 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
     if (!response.ok) throw new Error(`ELKO API Error: ${response.status}`);
     const elkoProducts = await response.json();
 
-    // 3. Fetch Primary Location (Crucial for Inventory)
     const locationResponse = await admin.graphql(
       `query {
         locations(first: 1) {
-          nodes { id name }
+          nodes { id }
         }
       }`
     );
@@ -44,12 +41,10 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
 
     if (!locationId) throw new Error("No active Shopify location found.");
 
-    // 4. Process each product
     for (const productData of elkoProducts) {
       try {
         const elkoCode = String(productData.elkoCode);
         
-        // Step A: Search for existing product via Metafield
         const existingProductResponse = await admin.graphql(
           `query ($query: String!) {
             products(first: 1, query: $query) {
@@ -79,7 +74,6 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
           status: "ACTIVE"
         };
 
-        // Step B: Create or Update Shell
         if (existingProduct) {
           await admin.graphql(
             `mutation productUpdate($input: ProductInput!) {
@@ -105,7 +99,6 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
           inventoryItemId = createJson.data.productCreate.product.variants.nodes[0].inventoryItem.id;
         }
 
-        // Step C: Set Metafields
         await admin.graphql(
           `mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
             metafieldsSet(metafields: $metafields) { userErrors { message } }
@@ -116,7 +109,6 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
           ]}}
         );
 
-        // Step D: Media
         if (productData.imagePath) {
           await admin.graphql(
             `mutation productCreateMedia($media: [CreateMediaInput!]!, $productId: ID!) {
@@ -126,9 +118,8 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
           );
         }
 
-        // Step E: Price & Inventory (THE FIX)
         if (variantId && inventoryItemId) {
-          // 1. Update Price
+          // Update Price
           await admin.graphql(
             `mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
               productVariantsBulkUpdate(productId: $productId, variants: $variants) { productVariants { id } }
@@ -136,7 +127,7 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
             { variables: { productId, variants: [{ id: variantId, price: String(productData.discountPrice) }] } }
           );
 
-          // 2. Enable Tracking
+          // Enable Tracking
           await admin.graphql(
             `mutation inventoryItemUpdate($id: ID!, $input: InventoryItemInput!) {
               inventoryItemUpdate(id: $id, input: $input) { inventoryItem { id tracked } }
@@ -144,13 +135,18 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
             { variables: { id: inventoryItemId, input: { tracked: true } } }
           );
 
-          // 3. Set Quantity
+          // SET QUANTITY
           const qty = parseInt(productData.quantity, 10) || 0;
-          console.log(`Syncing stock for ${elkoCode}: ${qty} units to ${locationId}`);
+          console.log(`Force syncing stock for ${elkoCode}: ${qty} units to ${locationId}`);
 
           await admin.graphql(
             `mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
-              inventorySetQuantities(input: $input) { userErrors { message } }
+              inventorySetQuantities(input: $input) {
+                inventoryQuantities {
+                  availableQuantity
+                }
+                userErrors { message }
+              }
             }`,
             { variables: { input: {
               name: "available",

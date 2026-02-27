@@ -277,7 +277,9 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                             variants: [
                                 {
                                     id: variantId,
-                                    price: String(price)
+                                    price: String(price),
+                                    inventoryManagement: "SHOPIFY",
+                                    inventoryPolicy: "DENY"
                                 }
                             ]
                         }
@@ -320,7 +322,7 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                                          {
                                              inventoryItemId: inventoryItemId,
                                              locationId: locationId,
-                                             quantity: Number(productData.availableQuantity)
+                                             quantity: parseInt(String(productData.availableQuantity), 10)
                                          }
                                      ]
                                  }

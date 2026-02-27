@@ -442,8 +442,39 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                       if (invJson.data?.inventorySetQuantities?.userErrors?.length > 0) {
                            console.warn(`Inventory set warning: ${JSON.stringify(invJson.data.inventorySetQuantities.userErrors)}`);
                       } else {
-                           console.log("Inventory quantity set successfully.");
+                           console.log("Inventory set response:", JSON.stringify(invJson.data?.inventorySetQuantities));
                       }
+
+                      // Verify inventory
+                      console.log("Verifying inventory level after update...");
+                      const verifyResponse = await admin.graphql(
+                        `query inventoryLevelCheck($id: ID!) {
+                          inventoryItem(id: $id) {
+                             inventoryLevels(first: 10) {
+                               edges {
+                                 node {
+                                   location {
+                                     id
+                                     name
+                                   }
+                                   quantities(names: ["available"]) {
+                                     name
+                                     quantity
+                                   }
+                                 }
+                               }
+                             }
+                          }
+                        }`,
+                        {
+                          variables: {
+                            id: inventoryItemId
+                          }
+                        }
+                      );
+                      const verifyJson = await verifyResponse.json();
+                      console.log("Inventory Verification Result:", JSON.stringify(verifyJson.data?.inventoryItem));
+
                  } else {
                      console.error("Could not find inventory item ID for variant.");
                  }

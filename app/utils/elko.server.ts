@@ -9,7 +9,7 @@ interface ElkoProduct {
   productType?: string;
   imagePath?: string;
   discountPrice?: string; // Assuming string or number, will convert
-  availableQuantity?: number;
+  quantity?: string;
 }
 
 export async function syncElkoProducts(shop: string, elkoIds: string[], admin: any) {
@@ -251,61 +251,73 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
         }
 
         // Step F (Variants & Inventory)
-        if (variantId) {
-             // Update price
-             const price = productData.discountPrice || productData.price;
-             if (price) {
-                  await admin.graphql(
-                    `mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-                      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-                        productVariants {
-                          id
-                          price
-                          inventoryItem {
-                            id
-                          }
-                        }
-                        userErrors {
-                          field
-                          message
-                        }
-                      }
-                    }`,
-                    {
-                        variables: {
-                            productId: productId,
-                            variants: [
-                                {
-                                    id: variantId,
-                                    price: String(price)
-                                }
-                            ]
-                        }
-                    }
-                  );
-             }
+        if (variantId && productData.discountPrice) {
+             // Step 1 (Price): Update price from discountPrice, capture inventoryItemId
+             const bulkUpdateResponse = await admin.graphql(
+               `mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+                 productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+                   productVariants {
+                     id
+                     price
+                     inventoryItem {
+                       id
+                     }
+                   }
+                   userErrors {
+                     field
+                     message
+                   }
+                 }
+               }`,
+               {
+                   variables: {
+                       productId: productId,
+                       variants: [
+                           {
+                               id: variantId,
+                               price: String(productData.discountPrice)
+                           }
+                       ]
+                   }
+               }
+             );
+             const bulkUpdateJson = await bulkUpdateResponse.json();
+             const inventoryItemId = bulkUpdateJson.data?.productVariantsBulkUpdate?.productVariants?.[0]?.inventoryItem?.id;
 
-             // Update Inventory
-             if (productData.availableQuantity !== undefined) {
-                 // First we need the inventoryItemId
-                 const variantResponse = await admin.graphql(
-                     `query {
-                         productVariant(id: "${variantId}") {
-                             inventoryItem {
-                                 id
+             if (inventoryItemId) {
+                 // Step 2 (Tracking Switch): Enable inventory tracking
+                 await admin.graphql(
+                     `mutation inventoryItemUpdate($id: ID!, $input: InventoryItemInput!) {
+                       inventoryItemUpdate(id: $id, input: $input) {
+                         inventoryItem {
+                           id
+                           tracked
+                         }
+                         userErrors {
+                           field
+                           message
+                         }
+                       }
+                     }`,
+                     {
+                         variables: {
+                             id: inventoryItemId,
+                             input: {
+                                 tracked: true
                              }
                          }
-                     }`
+                     }
                  );
-                 const variantJson = await variantResponse.json();
-                 const inventoryItemId = variantJson.data?.productVariant?.inventoryItem?.id;
 
-                 if (inventoryItemId) {
+                 // Step 3 (Quantity): Set inventory quantities
+                 if (productData.quantity !== undefined) {
                      const inventoryResponse = await admin.graphql(
                          `mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
                            inventorySetQuantities(input: $input) {
+                             inventoryLevels {
+                               available
+                             }
                              userErrors {
-                               field
                                message
                              }
                            }
@@ -320,17 +332,17 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                                          {
                                              inventoryItemId: inventoryItemId,
                                              locationId: locationId,
-                                             quantity: Number(productData.availableQuantity)
+                                             quantity: parseInt(productData.quantity, 10)
                                          }
                                      ]
                                  }
                              }
                          }
                      );
-                      const invJson = await inventoryResponse.json();
-                      if (invJson.data?.inventorySetQuantities?.userErrors?.length > 0) {
-                           console.warn(`Inventory set warning: ${JSON.stringify(invJson.data.inventorySetQuantities.userErrors)}`);
-                      }
+                     const invJson = await inventoryResponse.json();
+                     if (invJson.data?.inventorySetQuantities?.userErrors?.length > 0) {
+                         console.warn(`Inventory set warning: ${JSON.stringify(invJson.data.inventorySetQuantities.userErrors)}`);
+                     }
                  }
              }
         }

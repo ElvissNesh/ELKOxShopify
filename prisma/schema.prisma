@@ -37,4 +37,5 @@ model StoreConfiguration {
   id          String @id @default(uuid())
   shop        String @unique
   elkoApiKey  String
+  locationId  String?
 }

@@ -7,6 +7,7 @@ import {
   Card,
   FormLayout,
   TextField,
+  Select,
   Button,
   Banner,
   BlockStack,
@@ -17,13 +18,30 @@ import prisma from "../db.server";
 import { createElkoMetafieldDefinitions } from "../utils/metafields.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
 
   const storeConfiguration = await prisma.storeConfiguration.findUnique({
     where: { shop: session.shop },
   });
 
-  return { elkoApiKey: storeConfiguration?.elkoApiKey || "" };
+  const response = await admin.graphql(
+    `query {
+      locations(first: 20) {
+        nodes {
+          id
+          name
+        }
+      }
+    }`
+  );
+  const responseJson = await response.json();
+  const locations = responseJson.data?.locations?.nodes || [];
+
+  return {
+    elkoApiKey: storeConfiguration?.elkoApiKey || "",
+    locationId: storeConfiguration?.locationId || "",
+    locations,
+  };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -38,22 +56,30 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   const elkoApiKey = String(formData.get("elkoApiKey") || "");
+  const locationId = String(formData.get("locationId") || "");
 
   await prisma.storeConfiguration.upsert({
     where: { shop: session.shop },
-    update: { elkoApiKey },
-    create: { shop: session.shop, elkoApiKey },
+    update: { elkoApiKey, locationId },
+    create: { shop: session.shop, elkoApiKey, locationId },
   });
 
   return { status: "success", intent: "save_settings" };
 };
 
 export default function Settings() {
-  const { elkoApiKey } = useLoaderData<typeof loader>();
+  const { elkoApiKey, locationId, locations } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [apiKey, setApiKey] = useState(elkoApiKey);
+  const [selectedLocation, setSelectedLocation] = useState(locationId);
 
   const handleChange = useCallback((newValue: string) => setApiKey(newValue), []);
+  const handleLocationChange = useCallback((newValue: string) => setSelectedLocation(newValue), []);
+
+  const locationOptions = [
+    { label: "Select a location", value: "" },
+    ...locations.map((loc: any) => ({ label: loc.name, value: loc.id })),
+  ];
 
   return (
     <Page title="Elko Integration Settings">
@@ -75,6 +101,14 @@ export default function Settings() {
                     value={apiKey}
                     onChange={handleChange}
                     autoComplete="off"
+                  />
+                  <Select
+                    label="Import Location"
+                    name="locationId"
+                    options={locationOptions}
+                    onChange={handleLocationChange}
+                    value={selectedLocation}
+                    helpText="Select the location where imported products will be stocked. Defaults to the first location if not specified."
                   />
                   <Button submit variant="primary">
                     Save

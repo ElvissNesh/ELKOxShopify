@@ -62,25 +62,31 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
          throw new Error("Invalid response format from ELKO API.");
     }
 
-    // Step B (Location): Fetch primary locationId
-    console.log("Fetching primary location ID from Shopify...");
-    const locationResponse = await admin.graphql(
-      `query {
-        locations(first: 1) {
-          nodes {
-            id
-          }
-        }
-      }`
-    );
-    const locationJson = await locationResponse.json();
-    const locationId = locationJson.data?.locations?.nodes?.[0]?.id;
+    // Step B (Location): Determine Location ID
+    let locationId = storeConfig.locationId;
 
-    if (!locationId) {
-      console.error("Could not find primary location.");
-      throw new Error("Could not find primary location.");
+    if (locationId) {
+      console.log(`Using configured location ID: ${locationId}`);
+    } else {
+      console.log("No location configured. Fetching primary location ID from Shopify...");
+      const locationResponse = await admin.graphql(
+        `query {
+          locations(first: 1) {
+            nodes {
+              id
+            }
+          }
+        }`
+      );
+      const locationJson = await locationResponse.json();
+      locationId = locationJson.data?.locations?.nodes?.[0]?.id;
+
+      if (!locationId) {
+        console.error("Could not find primary location.");
+        throw new Error("Could not find primary location.");
+      }
+      console.log(`Primary location ID found: ${locationId}`);
     }
-    console.log(`Primary location ID found: ${locationId}`);
 
     // Step C (Product Shell): Iterate through fetched products
     for (const productData of elkoProducts) {

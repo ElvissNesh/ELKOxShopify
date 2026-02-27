@@ -5,7 +5,6 @@ import {
   Page,
   Layout,
   Card,
-  FormLayout,
   TextField,
   Select,
   Button,
@@ -94,7 +93,7 @@ export default function Settings() {
             )}
             <Card>
               <Form method="post">
-                <FormLayout>
+                <BlockStack gap="300">
                   <TextField
                     label="Elko API Key"
                     name="elkoApiKey"
@@ -113,7 +112,7 @@ export default function Settings() {
                   <Button submit variant="primary">
                     Save
                   </Button>
-                </FormLayout>
+                </BlockStack>
               </Form>
             </Card>
 

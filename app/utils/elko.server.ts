@@ -119,7 +119,6 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
         }
 
         if (variantId && inventoryItemId) {
-          // Update Price
           await admin.graphql(
             `mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
               productVariantsBulkUpdate(productId: $productId, variants: $variants) { productVariants { id } }
@@ -127,7 +126,6 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
             { variables: { productId, variants: [{ id: variantId, price: String(productData.discountPrice) }] } }
           );
 
-          // Enable Tracking
           await admin.graphql(
             `mutation inventoryItemUpdate($id: ID!, $input: InventoryItemInput!) {
               inventoryItemUpdate(id: $id, input: $input) { inventoryItem { id tracked } }
@@ -135,15 +133,14 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
             { variables: { id: inventoryItemId, input: { tracked: true } } }
           );
 
-          // SET QUANTITY
           const qty = parseInt(productData.quantity, 10) || 0;
           console.log(`Force syncing stock for ${elkoCode}: ${qty} units to ${locationId}`);
 
           await admin.graphql(
             `mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
               inventorySetQuantities(input: $input) {
-                inventoryQuantities {
-                  availableQuantity
+                inventoryLevels {
+                  available
                 }
                 userErrors { message }
               }

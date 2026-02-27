@@ -10,6 +10,11 @@ interface ElkoProduct {
   imagePath?: string;
   discountPrice?: string; // Assuming string or number, will convert
   availableQuantity?: number;
+  quantity?: string;
+  price?: string;
+  name?: string;
+  description?: string;
+  id?: string;
 }
 
 export async function syncElkoProducts(shop: string, elkoIds: string[], admin: any) {
@@ -252,10 +257,12 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
 
         // Step F (Variants & Inventory)
         if (variantId) {
-             // Update price
+             let inventoryItemId: string | undefined;
+
+             // Step 1 (Price)
              const price = productData.discountPrice || productData.price;
              if (price) {
-                  await admin.graphql(
+                  const priceResponse = await admin.graphql(
                     `mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
                       productVariantsBulkUpdate(productId: $productId, variants: $variants) {
                         productVariants {
@@ -283,29 +290,67 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                         }
                     }
                   );
+                  const priceJson = await priceResponse.json();
+                  if (priceJson.data?.productVariantsBulkUpdate?.userErrors?.length > 0) {
+                       console.warn(`Price update warning: ${JSON.stringify(priceJson.data.productVariantsBulkUpdate.userErrors)}`);
+                  } else {
+                       inventoryItemId = priceJson.data?.productVariantsBulkUpdate?.productVariants?.[0]?.inventoryItem?.id;
+                  }
              }
 
-             // Update Inventory
-             if (productData.availableQuantity !== undefined) {
-                 // First we need the inventoryItemId
-                 const variantResponse = await admin.graphql(
-                     `query {
-                         productVariant(id: "${variantId}") {
-                             inventoryItem {
-                                 id
+             // Step 2 & 3 (Inventory)
+             if (productData.quantity !== undefined) {
+                 if (!inventoryItemId) {
+                     // Fetch inventoryItemId if not obtained from price update
+                     const variantResponse = await admin.graphql(
+                         `query {
+                             productVariant(id: "${variantId}") {
+                                 inventoryItem {
+                                     id
+                                 }
                              }
-                         }
-                     }`
-                 );
-                 const variantJson = await variantResponse.json();
-                 const inventoryItemId = variantJson.data?.productVariant?.inventoryItem?.id;
+                         }`
+                     );
+                     const variantJson = await variantResponse.json();
+                     inventoryItemId = variantJson.data?.productVariant?.inventoryItem?.id;
+                 }
 
                  if (inventoryItemId) {
+                     // Step 2: The Tracking Switch
+                     const trackingResponse = await admin.graphql(
+                         `mutation inventoryItemUpdate($id: ID!, $input: InventoryItemInput!) {
+                           inventoryItemUpdate(id: $id, input: $input) {
+                             inventoryItem {
+                               id
+                               tracked
+                             }
+                             userErrors {
+                               field
+                               message
+                             }
+                           }
+                         }`,
+                         {
+                             variables: {
+                                 id: inventoryItemId,
+                                 input: { tracked: true }
+                             }
+                         }
+                     );
+                     const trackingJson = await trackingResponse.json();
+                     if (trackingJson.data?.inventoryItemUpdate?.userErrors?.length > 0) {
+                         console.warn(`Inventory tracking update warning: ${JSON.stringify(trackingJson.data.inventoryItemUpdate.userErrors)}`);
+                     }
+
+                     // Step 3: The Quantity
+                     const quantity = parseInt(productData.quantity, 10);
                      const inventoryResponse = await admin.graphql(
                          `mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
                            inventorySetQuantities(input: $input) {
+                             inventoryLevels {
+                               available
+                             }
                              userErrors {
-                               field
                                message
                              }
                            }
@@ -315,12 +360,11 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                                  input: {
                                      name: "available",
                                      reason: "correction",
-                                     ignoreCompareQuantity: true,
                                      quantities: [
                                          {
                                              inventoryItemId: inventoryItemId,
                                              locationId: locationId,
-                                             quantity: Number(productData.availableQuantity)
+                                             quantity: quantity
                                          }
                                      ]
                                  }

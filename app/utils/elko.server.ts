@@ -10,6 +10,7 @@ interface ElkoProduct {
   imagePath?: string;
   discountPrice?: string; // Assuming string or number, will convert
   availableQuantity?: number;
+  quantity?: string; // Added to support quantity field
 }
 
 export async function syncElkoProducts(shop: string, elkoIds: string[], admin: any) {
@@ -252,7 +253,7 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
 
         // Step F (Variants & Inventory)
         if (variantId) {
-             // Update price
+             // 1. Update price
              const price = productData.discountPrice || productData.price;
              if (price) {
                   await admin.graphql(
@@ -285,25 +286,65 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                   );
              }
 
-             // Update Inventory
-             if (productData.availableQuantity !== undefined) {
-                 // First we need the inventoryItemId
-                 const variantResponse = await admin.graphql(
-                     `query {
-                         productVariant(id: "${variantId}") {
-                             inventoryItem {
-                                 id
-                             }
+             // Update Inventory Logic (Steps 2 & 3)
+             // We need the inventoryItemId for both tracking enable and setting quantities
+             const variantResponse = await admin.graphql(
+                 `query {
+                     productVariant(id: "${variantId}") {
+                         inventoryItem {
+                             id
                          }
-                     }`
-                 );
-                 const variantJson = await variantResponse.json();
-                 const inventoryItemId = variantJson.data?.productVariant?.inventoryItem?.id;
+                     }
+                 }`
+             );
+             const variantJson = await variantResponse.json();
+             const inventoryItemId = variantJson.data?.productVariant?.inventoryItem?.id;
 
-                 if (inventoryItemId) {
+             if (inventoryItemId) {
+                 // 2. Enable Tracking via inventoryItemUpdate
+                 const trackResponse = await admin.graphql(
+                    `mutation inventoryItemUpdate($id: ID!, $input: InventoryItemInput!) {
+                      inventoryItemUpdate(id: $id, input: $input) {
+                        inventoryItem {
+                          id
+                          tracked
+                        }
+                        userErrors {
+                          field
+                          message
+                        }
+                      }
+                    }`,
+                    {
+                        variables: {
+                            id: inventoryItemId,
+                            input: {
+                                tracked: true
+                            }
+                        }
+                    }
+                 );
+                 const trackJson = await trackResponse.json();
+                 if (trackJson.data?.inventoryItemUpdate?.userErrors?.length > 0) {
+                      console.warn(`Inventory tracking update warning: ${JSON.stringify(trackJson.data.inventoryItemUpdate.userErrors)}`);
+                 }
+
+                 // 3. Set Quantities via inventorySetQuantities
+                 const quantity = productData.quantity !== undefined ? parseInt(productData.quantity, 10) : 0;
+
+                 // Ensure locationId is valid (it should be as we fetched it earlier, but checking handles safety)
+                 if (locationId) {
                      const inventoryResponse = await admin.graphql(
                          `mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
                            inventorySetQuantities(input: $input) {
+                             inventoryAdjustmentGroup {
+                               inventoryAdjustments {
+                                 inventoryLevel {
+                                   id
+                                   available
+                                 }
+                               }
+                             }
                              userErrors {
                                field
                                message
@@ -315,12 +356,11 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                                  input: {
                                      name: "available",
                                      reason: "correction",
-                                     ignoreCompareQuantity: true,
                                      quantities: [
                                          {
                                              inventoryItemId: inventoryItemId,
                                              locationId: locationId,
-                                             quantity: Number(productData.availableQuantity)
+                                             quantity: quantity
                                          }
                                      ]
                                  }

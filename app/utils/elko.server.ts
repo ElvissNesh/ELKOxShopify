@@ -314,9 +314,6 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                      const inventoryResponse = await admin.graphql(
                          `mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
                            inventorySetQuantities(input: $input) {
-                             inventoryLevels {
-                               available
-                             }
                              userErrors {
                                message
                              }

@@ -254,8 +254,10 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
         if (variantId) {
              // Update price
              const price = productData.discountPrice || productData.price;
+             let inventoryItemIdFromUpdate;
+
              if (price) {
-                  await admin.graphql(
+                  const updateVariantResponse = await admin.graphql(
                     `mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
                       productVariantsBulkUpdate(productId: $productId, variants: $variants) {
                         productVariants {
@@ -277,32 +279,60 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                             variants: [
                                 {
                                     id: variantId,
-                                    price: String(price),
-                                    inventoryManagement: "SHOPIFY",
-                                    inventoryPolicy: "DENY"
+                                    price: String(price)
                                 }
                             ]
                         }
                     }
                   );
+                  const updateVariantJson = await updateVariantResponse.json();
+                  inventoryItemIdFromUpdate = updateVariantJson.data?.productVariantsBulkUpdate?.productVariants?.[0]?.inventoryItem?.id;
              }
 
              // Update Inventory
              if (productData.availableQuantity !== undefined) {
                  // First we need the inventoryItemId
-                 const variantResponse = await admin.graphql(
-                     `query {
-                         productVariant(id: "${variantId}") {
-                             inventoryItem {
-                                 id
+                 let inventoryItemId = inventoryItemIdFromUpdate;
+
+                 if (!inventoryItemId) {
+                     const variantResponse = await admin.graphql(
+                         `query {
+                             productVariant(id: "${variantId}") {
+                                 inventoryItem {
+                                     id
+                                 }
                              }
-                         }
-                     }`
-                 );
-                 const variantJson = await variantResponse.json();
-                 const inventoryItemId = variantJson.data?.productVariant?.inventoryItem?.id;
+                         }`
+                     );
+                     const variantJson = await variantResponse.json();
+                     inventoryItemId = variantJson.data?.productVariant?.inventoryItem?.id;
+                 }
 
                  if (inventoryItemId) {
+                     // Enable tracking
+                     const itemUpdateResponse = await admin.graphql(
+                         `mutation inventoryItemUpdate($id: ID!, $input: InventoryItemInput!) {
+                           inventoryItemUpdate(id: $id, input: $input) {
+                             userErrors {
+                               field
+                               message
+                             }
+                           }
+                         }`,
+                         {
+                             variables: {
+                                 id: inventoryItemId,
+                                 input: {
+                                     tracked: true
+                                 }
+                             }
+                         }
+                     );
+                     const itemUpdateJson = await itemUpdateResponse.json();
+                     if (itemUpdateJson.data?.inventoryItemUpdate?.userErrors?.length > 0) {
+                         console.warn(`Inventory tracking set warning: ${JSON.stringify(itemUpdateJson.data.inventoryItemUpdate.userErrors)}`);
+                     }
+
                      const inventoryResponse = await admin.graphql(
                          `mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
                            inventorySetQuantities(input: $input) {

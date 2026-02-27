@@ -66,21 +66,30 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
     console.log("Fetching primary location ID from Shopify...");
     const locationResponse = await admin.graphql(
       `query {
-        locations(first: 1) {
+        locations(first: 5) {
           nodes {
             id
+            name
+            isPrimary
           }
         }
       }`
     );
     const locationJson = await locationResponse.json();
-    const locationId = locationJson.data?.locations?.nodes?.[0]?.id;
+    const locations = locationJson.data?.locations?.nodes || [];
 
-    if (!locationId) {
-      console.error("Could not find primary location.");
-      throw new Error("Could not find primary location.");
+    let targetLocation = locations.find((loc: any) => loc.isPrimary);
+    if (!targetLocation && locations.length > 0) {
+        targetLocation = locations[0];
     }
-    console.log(`Primary location ID found: ${locationId}`);
+
+    if (!targetLocation) {
+      console.error("Could not find any location.");
+      throw new Error("Could not find any location.");
+    }
+
+    const locationId = targetLocation.id;
+    console.log(`[Sync] Targeting Primary Location: ${targetLocation.name} (${locationId})`);
 
     // Step C (Product Shell): Iterate through fetched products
     for (const productData of elkoProducts) {

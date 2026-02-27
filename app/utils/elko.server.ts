@@ -66,26 +66,30 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
     console.log("Fetching primary location ID from Shopify...");
     const locationResponse = await admin.graphql(
       `query {
-        locations(first: 1) {
+        locations(first: 10) {
           nodes {
             id
+            isPrimary
           }
         }
       }`
     );
     const locationJson = await locationResponse.json();
-    const locationId = locationJson.data?.locations?.nodes?.[0]?.id;
+    // Try to find the primary location first, otherwise fallback to the first one
+    const primaryLocation = locationJson.data?.locations?.nodes?.find((loc: any) => loc.isPrimary);
+    const locationId = primaryLocation?.id || locationJson.data?.locations?.nodes?.[0]?.id;
 
     if (!locationId) {
-      console.error("Could not find primary location.");
-      throw new Error("Could not find primary location.");
+      console.error("Could not find any location.");
+      throw new Error("Could not find any location.");
     }
-    console.log(`Primary location ID found: ${locationId}`);
+    console.log(`Target Location ID found: ${locationId} (Primary: ${!!primaryLocation})`);
 
     // Step C (Product Shell): Iterate through fetched products
     for (const productData of elkoProducts) {
       const elkoCode = String(productData.elkoCode || productData.id);
       console.log(`Processing ELKO product: ${elkoCode} - ${productData.name || productData.title}`);
+      console.log(`Raw ELKO Data for ${elkoCode}:`, JSON.stringify(productData));
 
       try {
         // Check if product exists using the elko_id metafield
@@ -98,6 +102,9 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                   variants(first: 1) {
                     nodes {
                       id
+                      inventoryItem {
+                        id
+                      }
                     }
                   }
                 }
@@ -116,6 +123,7 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
 
         let productId = existingProduct?.id;
         let variantId = existingProduct?.variants?.nodes?.[0]?.id;
+        let inventoryItemId = existingProduct?.variants?.nodes?.[0]?.inventoryItem?.id;
 
         const productInput: any = {
           title: productData.title || productData.name || `ELKO Product ${elkoCode}`,
@@ -156,6 +164,7 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
         } else {
           console.log(`Creating new product for ELKO code: ${elkoCode}`);
           // Create new product
+          // Explicitly set inventoryManagement: "SHOPIFY" to enable tracking immediately
           const createResponse = await admin.graphql(
             `mutation productCreate($input: ProductInput!) {
               productCreate(input: $input) {
@@ -164,6 +173,9 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                   variants(first: 1) {
                     nodes {
                       id
+                      inventoryItem {
+                        id
+                      }
                     }
                   }
                 }
@@ -175,7 +187,15 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
             }`,
             {
               variables: {
-                input: productInput,
+                input: {
+                    ...productInput,
+                    variants: [
+                        {
+                            inventoryManagement: "SHOPIFY",
+                            price: String(productData.discountPrice || productData.price || "0")
+                        }
+                    ]
+                },
               },
             }
           );
@@ -187,7 +207,8 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
           }
           productId = createJson.data?.productCreate?.product?.id;
           variantId = createJson.data?.productCreate?.product?.variants?.nodes?.[0]?.id;
-          console.log(`Product created: ${productId}, Variant: ${variantId}`);
+          inventoryItemId = createJson.data?.productCreate?.product?.variants?.nodes?.[0]?.inventoryItem?.id;
+          console.log(`Product created: ${productId}, Variant: ${variantId}, InventoryItem: ${inventoryItemId}`);
         }
 
         // Step D (Metafields): Set elko_integration.is_elko_product and elko_integration.elko_id
@@ -274,6 +295,7 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
              const price = productData.discountPrice || productData.price;
              if (price) {
                   console.log(`Updating price to: ${price}`);
+                  // Also ensure inventoryManagement is SHOPIFY if we are updating
                   await admin.graphql(
                     `mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
                       productVariantsBulkUpdate(productId: $productId, variants: $variants) {
@@ -296,7 +318,8 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                             variants: [
                                 {
                                     id: variantId,
-                                    price: String(price)
+                                    price: String(price),
+                                    inventoryManagement: "SHOPIFY" // Ensuring tracking is on during updates too
                                 }
                             ]
                         }
@@ -304,9 +327,11 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                   );
              }
 
-             // Update Inventory
-             // Determine quantity to use: try 'quantity', then 'availableQuantity', then 'Quantity' (case-sensitive fallback)
+             // Update Inventory Logic Refactored
+
+             // 1. Determine Quantity
              let quantityToSet: number | undefined;
+             // Try 'quantity', then 'availableQuantity', then 'Quantity' (case-sensitive fallback)
              if (productData.quantity !== undefined && productData.quantity !== null) {
                  quantityToSet = parseInt(String(productData.quantity), 10);
              } else if (productData.availableQuantity !== undefined && productData.availableQuantity !== null) {
@@ -315,16 +340,15 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                  quantityToSet = parseInt(String(productData.Quantity), 10);
              }
 
-             // Handle NaN from parsing
              if (quantityToSet !== undefined && isNaN(quantityToSet)) {
                  quantityToSet = undefined;
              }
 
-             console.log(`Determined quantity to set: ${quantityToSet}`);
+             console.log(`Parsed quantity for ${elkoCode}: ${quantityToSet} (Raw inputs - quantity: ${productData.quantity}, availableQuantity: ${productData.availableQuantity}, Quantity: ${productData.Quantity})`);
 
-             if (quantityToSet !== undefined) {
-                 // First we need the inventoryItemId
-                 console.log("Fetching inventory item ID...");
+             // 2. Get Inventory Item ID (if missing)
+             if (!inventoryItemId) {
+                 console.log("Fetching inventory item ID (missing from prior steps)...");
                  const variantResponse = await admin.graphql(
                      `query {
                          productVariant(id: "${variantId}") {
@@ -335,75 +359,82 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                      }`
                  );
                  const variantJson = await variantResponse.json();
-                 const inventoryItemId = variantJson.data?.productVariant?.inventoryItem?.id;
+                 inventoryItemId = variantJson.data?.productVariant?.inventoryItem?.id;
+             }
 
-                 if (inventoryItemId) {
-                     console.log(`Inventory Item ID: ${inventoryItemId}. Enabling tracking and checking stocking status...`);
+             if (inventoryItemId) {
+                 console.log(`Inventory Item ID: ${inventoryItemId}`);
 
-                     // Enable inventory tracking
-                     const inventoryItemUpdateResponse = await admin.graphql(
-                         `mutation inventoryItemUpdate($id: ID!, $input: InventoryItemInput!) {
-                           inventoryItemUpdate(id: $id, input: $input) {
-                             inventoryItem {
-                               id
-                               tracked
-                             }
-                             userErrors {
-                               field
-                               message
-                             }
-                           }
-                         }`,
-                         {
-                           variables: {
-                             id: inventoryItemId,
-                             input: {
-                               tracked: true
-                             }
-                           }
+                 // 3. Enable Tracking (Explicitly)
+                 // Even though we set inventoryManagement: SHOPIFY, calling inventoryItemUpdate with tracked: true confirms it
+                 // and is robust for existing items that were previously untracked.
+                 console.log("Enabling inventory tracking via inventoryItemUpdate...");
+                 const inventoryItemUpdateResponse = await admin.graphql(
+                     `mutation inventoryItemUpdate($id: ID!, $input: InventoryItemInput!) {
+                       inventoryItemUpdate(id: $id, input: $input) {
+                         inventoryItem {
+                           id
+                           tracked
                          }
-                     );
-
-                     const invUpdateJson = await inventoryItemUpdateResponse.json();
-                     if (invUpdateJson.data?.inventoryItemUpdate?.userErrors?.length > 0) {
-                        console.error(`Inventory tracking enable failed: ${JSON.stringify(invUpdateJson.data.inventoryItemUpdate.userErrors)}`);
-                     } else {
-                        console.log("Inventory tracking enabled.");
-                     }
-
-                     // Activate inventory at location if needed
-                     console.log(`Ensuring inventory item is stocked at location: ${locationId}`);
-                     const activateResponse = await admin.graphql(
-                         `mutation inventoryBulkToggleActivation($inventoryItemId: ID!, $inventoryItemUpdates: [InventoryBulkToggleActivationInput!]!) {
-                           inventoryBulkToggleActivation(inventoryItemId: $inventoryItemId, inventoryItemUpdates: $inventoryItemUpdates) {
-                             inventoryItem {
-                               id
-                             }
-                             userErrors {
-                               field
-                               message
-                             }
-                           }
-                         }`,
-                         {
-                           variables: {
-                             inventoryItemId: inventoryItemId,
-                             inventoryItemUpdates: [
-                               {
-                                 locationId: locationId,
-                                 activate: true
-                               }
-                             ]
-                           }
+                         userErrors {
+                           field
+                           message
                          }
-                     );
-                     const activateJson = await activateResponse.json();
-                     if (activateJson.data?.inventoryBulkToggleActivation?.userErrors?.length > 0) {
-                         console.warn(`Inventory activation warning: ${JSON.stringify(activateJson.data.inventoryBulkToggleActivation.userErrors)}`);
-                     } else {
-                         console.log("Inventory item activated at location.");
+                       }
+                     }`,
+                     {
+                       variables: {
+                         id: inventoryItemId,
+                         input: {
+                           tracked: true
+                         }
+                       }
                      }
+                 );
 
+                 const invUpdateJson = await inventoryItemUpdateResponse.json();
+                 if (invUpdateJson.data?.inventoryItemUpdate?.userErrors?.length > 0) {
+                    console.error(`Inventory tracking enable failed: ${JSON.stringify(invUpdateJson.data.inventoryItemUpdate.userErrors)}`);
+                 } else {
+                    console.log("Inventory tracking confirmed enabled.");
+                 }
+
+                 // 4. Activate at Location
+                 console.log(`Activating inventory item at location: ${locationId}`);
+                 const activateResponse = await admin.graphql(
+                     `mutation inventoryBulkToggleActivation($inventoryItemId: ID!, $inventoryItemUpdates: [InventoryBulkToggleActivationInput!]!) {
+                       inventoryBulkToggleActivation(inventoryItemId: $inventoryItemId, inventoryItemUpdates: $inventoryItemUpdates) {
+                         inventoryItem {
+                           id
+                         }
+                         userErrors {
+                           field
+                           message
+                         }
+                       }
+                     }`,
+                     {
+                       variables: {
+                         inventoryItemId: inventoryItemId,
+                         inventoryItemUpdates: [
+                           {
+                             locationId: locationId,
+                             activate: true
+                           }
+                         ]
+                       }
+                     }
+                 );
+                 const activateJson = await activateResponse.json();
+                 // It's possible it's already active, so errors might just mean "no change needed" sometimes, but we log them.
+                 if (activateJson.data?.inventoryBulkToggleActivation?.userErrors?.length > 0) {
+                     console.warn(`Inventory activation warning (might be already active): ${JSON.stringify(activateJson.data.inventoryBulkToggleActivation.userErrors)}`);
+                 } else {
+                     console.log("Inventory item activated.");
+                 }
+
+                 // 5. Set Quantity
+                 if (quantityToSet !== undefined) {
                      console.log(`Setting inventory quantity to ${quantityToSet} at location ${locationId}`);
                      const inventoryResponse = await admin.graphql(
                          `mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
@@ -440,44 +471,48 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                      );
                       const invJson = await inventoryResponse.json();
                       if (invJson.data?.inventorySetQuantities?.userErrors?.length > 0) {
-                           console.warn(`Inventory set warning: ${JSON.stringify(invJson.data.inventorySetQuantities.userErrors)}`);
+                           console.error(`Inventory set FAILED: ${JSON.stringify(invJson.data.inventorySetQuantities.userErrors)}`);
                       } else {
-                           console.log("Inventory set response:", JSON.stringify(invJson.data?.inventorySetQuantities));
+                           console.log("Inventory quantity updated successfully.");
+                           console.log("Inventory set details:", JSON.stringify(invJson.data?.inventorySetQuantities));
                       }
+                 } else {
+                     console.log("Skipping inventory quantity set as no valid quantity was parsed from ELKO data.");
+                 }
 
-                      // Verify inventory
-                      console.log("Verifying inventory level after update...");
-                      const verifyResponse = await admin.graphql(
-                        `query inventoryLevelCheck($id: ID!) {
-                          inventoryItem(id: $id) {
-                             inventoryLevels(first: 10) {
-                               edges {
-                                 node {
-                                   location {
-                                     id
-                                     name
-                                   }
-                                   quantities(names: ["available"]) {
-                                     name
-                                     quantity
-                                   }
-                                 }
+                  // 6. Verify Final State
+                  console.log("Verifying final inventory level...");
+                  const verifyResponse = await admin.graphql(
+                    `query inventoryLevelCheck($id: ID!) {
+                      inventoryItem(id: $id) {
+                         tracked
+                         inventoryLevels(first: 10) {
+                           edges {
+                             node {
+                               location {
+                                 id
+                                 name
+                               }
+                               quantities(names: ["available"]) {
+                                 name
+                                 quantity
                                }
                              }
-                          }
-                        }`,
-                        {
-                          variables: {
-                            id: inventoryItemId
-                          }
-                        }
-                      );
-                      const verifyJson = await verifyResponse.json();
-                      console.log("Inventory Verification Result:", JSON.stringify(verifyJson.data?.inventoryItem));
+                           }
+                         }
+                      }
+                    }`,
+                    {
+                      variables: {
+                        id: inventoryItemId
+                      }
+                    }
+                  );
+                  const verifyJson = await verifyResponse.json();
+                  console.log("Final Inventory State:", JSON.stringify(verifyJson.data?.inventoryItem));
 
-                 } else {
-                     console.error("Could not find inventory item ID for variant.");
-                 }
+             } else {
+                 console.error("CRITICAL: Could not find inventory item ID for variant, cannot update inventory.");
              }
         }
 

@@ -338,11 +338,9 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                          `mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
                            inventorySetQuantities(input: $input) {
                              inventoryAdjustmentGroup {
-                               inventoryAdjustments {
-                                 inventoryLevel {
-                                   id
-                                   available
-                                 }
+                               changes {
+                                 name
+                                 delta
                                }
                              }
                              userErrors {

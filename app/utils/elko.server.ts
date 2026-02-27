@@ -164,7 +164,8 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
         } else {
           console.log(`Creating new product for ELKO code: ${elkoCode}`);
           // Create new product
-          // Explicitly set inventoryManagement: "SHOPIFY" to enable tracking immediately
+          // Note: "variants" field is not defined on ProductInput in this API version.
+          // We will create the product with default variant, then update it below.
           const createResponse = await admin.graphql(
             `mutation productCreate($input: ProductInput!) {
               productCreate(input: $input) {
@@ -187,15 +188,7 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
             }`,
             {
               variables: {
-                input: {
-                    ...productInput,
-                    variants: [
-                        {
-                            inventoryManagement: "SHOPIFY",
-                            price: String(productData.discountPrice || productData.price || "0")
-                        }
-                    ]
-                },
+                input: productInput,
               },
             }
           );

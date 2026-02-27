@@ -10,9 +10,16 @@ interface ElkoProduct {
   imagePath?: string;
   discountPrice?: string; // Assuming string or number, will convert
   availableQuantity?: number;
+  quantity?: string | number;
+  Quantity?: string | number;
+  id?: string | number;
+  name?: string;
+  description?: string;
+  price?: string | number;
 }
 
 export async function syncElkoProducts(shop: string, elkoIds: string[], admin: any) {
+  console.log(`Starting syncElkoProducts for shop: ${shop} with elkoIds: ${elkoIds.join(", ")}`);
   const results = {
     success: 0,
     errors: [] as string[],
@@ -33,7 +40,7 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
     const elkoUrl = new URL("https://api.elko.cloud/v3.0/api/Catalog/Products");
     elkoIds.forEach((id) => elkoUrl.searchParams.append("elkoCode", id.trim()));
 
-    // Assuming GET request based on query params description
+    console.log(`Fetching products from ELKO API: ${elkoUrl.toString()}`);
     const response = await fetch(elkoUrl.toString(), {
       method: "GET",
       headers: {
@@ -43,16 +50,20 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Failed to fetch products from ELKO: ${response.status} ${response.statusText}`, errorText);
       throw new Error(`Failed to fetch products from ELKO: ${response.status} ${response.statusText}`);
     }
 
     const elkoProducts = await response.json();
+    console.log(`Received ${Array.isArray(elkoProducts) ? elkoProducts.length : 0} products from ELKO.`);
 
     if (!Array.isArray(elkoProducts)) {
          throw new Error("Invalid response format from ELKO API.");
     }
 
     // Step B (Location): Fetch primary locationId
+    console.log("Fetching primary location ID from Shopify...");
     const locationResponse = await admin.graphql(
       `query {
         locations(first: 1) {
@@ -66,14 +77,17 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
     const locationId = locationJson.data?.locations?.nodes?.[0]?.id;
 
     if (!locationId) {
+      console.error("Could not find primary location.");
       throw new Error("Could not find primary location.");
     }
+    console.log(`Primary location ID found: ${locationId}`);
 
     // Step C (Product Shell): Iterate through fetched products
     for (const productData of elkoProducts) {
-      try {
-        const elkoCode = String(productData.elkoCode || productData.id); // Fallback if needed
+      const elkoCode = String(productData.elkoCode || productData.id);
+      console.log(`Processing ELKO product: ${elkoCode} - ${productData.name || productData.title}`);
 
+      try {
         // Check if product exists using the elko_id metafield
         const existingProductResponse = await admin.graphql(
           `query ($query: String!) {
@@ -111,6 +125,7 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
         };
 
         if (existingProduct) {
+           console.log(`Updating existing product: ${productId}`);
            // Update existing product
            const updateResponse = await admin.graphql(
              `mutation productUpdate($input: ProductInput!) {
@@ -135,9 +150,11 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
            );
            const updateJson = await updateResponse.json();
             if (updateJson.data?.productUpdate?.userErrors?.length > 0) {
+                 console.error(`Update failed for ${elkoCode}:`, updateJson.data.productUpdate.userErrors);
                  throw new Error(`Update failed: ${JSON.stringify(updateJson.data.productUpdate.userErrors)}`);
             }
         } else {
+          console.log(`Creating new product for ELKO code: ${elkoCode}`);
           // Create new product
           const createResponse = await admin.graphql(
             `mutation productCreate($input: ProductInput!) {
@@ -165,16 +182,16 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
           const createJson = await createResponse.json();
 
           if (createJson.data?.productCreate?.userErrors?.length > 0) {
+             console.error(`Create failed for ${elkoCode}:`, createJson.data.productCreate.userErrors);
              throw new Error(`Create failed: ${JSON.stringify(createJson.data.productCreate.userErrors)}`);
           }
           productId = createJson.data?.productCreate?.product?.id;
           variantId = createJson.data?.productCreate?.product?.variants?.nodes?.[0]?.id;
+          console.log(`Product created: ${productId}, Variant: ${variantId}`);
         }
 
         // Step D (Metafields): Set elko_integration.is_elko_product and elko_integration.elko_id
-        // We can do this via productUpdate or separate mutation. Doing via productUpdate for efficiency usually,
-        // but here let's ensure it's set specifically.
-        // Actually, let's use metafieldsSet for clarity and batching if needed later.
+        console.log(`Setting metafields for product: ${productId}`);
         const metafieldsSetResponse = await admin.graphql(
             `mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
               metafieldsSet(metafields: $metafields) {
@@ -212,6 +229,7 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
 
         // Step E (Media): Attach ELKO imagePath
         if (productData.imagePath) {
+             console.log(`Attaching image: ${productData.imagePath}`);
              const mediaResponse = await admin.graphql(
                 `mutation productCreateMedia($media: [CreateMediaInput!]!, $productId: ID!) {
                   productCreateMedia(media: $media, productId: $productId) {
@@ -255,6 +273,7 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
              // Update price
              const price = productData.discountPrice || productData.price;
              if (price) {
+                  console.log(`Updating price to: ${price}`);
                   await admin.graphql(
                     `mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
                       productVariantsBulkUpdate(productId: $productId, variants: $variants) {
@@ -286,8 +305,26 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
              }
 
              // Update Inventory
-             if (productData.availableQuantity !== undefined) {
+             // Determine quantity to use: try 'quantity', then 'availableQuantity', then 'Quantity' (case-sensitive fallback)
+             let quantityToSet: number | undefined;
+             if (productData.quantity !== undefined && productData.quantity !== null) {
+                 quantityToSet = parseInt(String(productData.quantity), 10);
+             } else if (productData.availableQuantity !== undefined && productData.availableQuantity !== null) {
+                 quantityToSet = Number(productData.availableQuantity);
+             } else if (productData.Quantity !== undefined && productData.Quantity !== null) {
+                 quantityToSet = parseInt(String(productData.Quantity), 10);
+             }
+
+             // Handle NaN from parsing
+             if (quantityToSet !== undefined && isNaN(quantityToSet)) {
+                 quantityToSet = undefined;
+             }
+
+             console.log(`Determined quantity to set: ${quantityToSet}`);
+
+             if (quantityToSet !== undefined) {
                  // First we need the inventoryItemId
+                 console.log("Fetching inventory item ID...");
                  const variantResponse = await admin.graphql(
                      `query {
                          productVariant(id: "${variantId}") {
@@ -301,9 +338,50 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                  const inventoryItemId = variantJson.data?.productVariant?.inventoryItem?.id;
 
                  if (inventoryItemId) {
+                     console.log(`Inventory Item ID: ${inventoryItemId}. Enabling tracking...`);
+
+                     // Enable inventory tracking
+                     const inventoryItemUpdateResponse = await admin.graphql(
+                         `mutation inventoryItemUpdate($id: ID!, $input: InventoryItemInput!) {
+                           inventoryItemUpdate(id: $id, input: $input) {
+                             inventoryItem {
+                               id
+                               tracked
+                             }
+                             userErrors {
+                               field
+                               message
+                             }
+                           }
+                         }`,
+                         {
+                           variables: {
+                             id: inventoryItemId,
+                             input: {
+                               tracked: true
+                             }
+                           }
+                         }
+                     );
+
+                     const invUpdateJson = await inventoryItemUpdateResponse.json();
+                     if (invUpdateJson.data?.inventoryItemUpdate?.userErrors?.length > 0) {
+                        console.error(`Inventory tracking enable failed: ${JSON.stringify(invUpdateJson.data.inventoryItemUpdate.userErrors)}`);
+                     } else {
+                        console.log("Inventory tracking enabled.");
+                     }
+
+                     console.log(`Setting inventory quantity to ${quantityToSet} at location ${locationId}`);
                      const inventoryResponse = await admin.graphql(
                          `mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
                            inventorySetQuantities(input: $input) {
+                             inventoryAdjustmentGroup {
+                               reason
+                               changes {
+                                 name
+                                 delta
+                               }
+                             }
                              userErrors {
                                field
                                message
@@ -320,7 +398,7 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                                          {
                                              inventoryItemId: inventoryItemId,
                                              locationId: locationId,
-                                             quantity: Number(productData.availableQuantity)
+                                             quantity: quantityToSet
                                          }
                                      ]
                                  }
@@ -330,12 +408,17 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
                       const invJson = await inventoryResponse.json();
                       if (invJson.data?.inventorySetQuantities?.userErrors?.length > 0) {
                            console.warn(`Inventory set warning: ${JSON.stringify(invJson.data.inventorySetQuantities.userErrors)}`);
+                      } else {
+                           console.log("Inventory quantity set successfully.");
                       }
+                 } else {
+                     console.error("Could not find inventory item ID for variant.");
                  }
              }
         }
 
         results.success++;
+        console.log(`Successfully processed product: ${elkoCode}`);
 
       } catch (innerError: any) {
         console.error(`Failed to process product ${productData.elkoCode}:`, innerError);
@@ -343,6 +426,7 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
       }
     }
 
+    console.log("Sync completed.");
     return results;
 
   } catch (error: any) {

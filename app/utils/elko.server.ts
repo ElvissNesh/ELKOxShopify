@@ -122,7 +122,7 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
           }`,
           {
             variables: {
-              query: `metafield:elko_integration.elko_id:${elkoCode}`
+              query: `metafields.elko_integration.elko_id:${elkoCode}`
             },
           }
         );

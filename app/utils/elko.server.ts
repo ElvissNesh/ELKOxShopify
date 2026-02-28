@@ -18,6 +18,13 @@ interface ElkoProduct {
   price?: string | number;
 }
 
+const parseQuantity = (val: string | number | undefined | null): number | undefined => {
+    if (val === undefined || val === null) return undefined;
+    // Convert to string and strip > symbol and any extra spaces
+    const cleanedVal = String(val).replace(/>/g, '').trim();
+    return parseInt(cleanedVal, 10);
+};
+
 export async function syncElkoProducts(shop: string, elkoIds: string[], admin: any) {
   console.log(`Starting syncElkoProducts for shop: ${shop} with elkoIds: ${elkoIds.join(", ")}`);
   const results = {
@@ -330,12 +337,13 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
              // Update Inventory
              // Determine quantity to use: try 'quantity', then 'availableQuantity', then 'Quantity' (case-sensitive fallback)
              let quantityToSet: number | undefined;
+
              if (productData.quantity !== undefined && productData.quantity !== null) {
-                 quantityToSet = parseInt(String(productData.quantity), 10);
+                 quantityToSet = parseQuantity(productData.quantity);
              } else if (productData.availableQuantity !== undefined && productData.availableQuantity !== null) {
-                 quantityToSet = Number(productData.availableQuantity);
+                 quantityToSet = parseQuantity(productData.availableQuantity);
              } else if (productData.Quantity !== undefined && productData.Quantity !== null) {
-                 quantityToSet = parseInt(String(productData.Quantity), 10);
+                 quantityToSet = parseQuantity(productData.Quantity);
              }
 
              // Handle NaN from parsing

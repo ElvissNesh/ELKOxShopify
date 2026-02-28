@@ -39,6 +39,7 @@ model StoreConfiguration {
   elkoApiKey  String
   locationId  String?
   existingProductBehavior String @default("skip")
+  importedProductStatus   String @default("ACTIVE")
 }
 
 model AttributeMapping {

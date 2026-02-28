@@ -95,17 +95,50 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { status: "success", intent: "save_mappings" };
   }
 
-  const elkoApiKey = String(formData.get("elkoApiKey") || "");
-  const locationId = String(formData.get("locationId") || "");
-  const existingProductBehavior = String(formData.get("existingProductBehavior") || "skip");
+  if (intent === "save_module_settings") {
+    const elkoApiKey = String(formData.get("elkoApiKey") || "");
 
-  await prisma.storeConfiguration.upsert({
-    where: { shop: session.shop },
-    update: { elkoApiKey, locationId, existingProductBehavior },
-    create: { shop: session.shop, elkoApiKey, locationId, existingProductBehavior },
-  });
+    const existingConfig = await prisma.storeConfiguration.findUnique({
+      where: { shop: session.shop },
+    });
 
-  return { status: "success", intent: "save_settings" };
+    await prisma.storeConfiguration.upsert({
+      where: { shop: session.shop },
+      update: { elkoApiKey },
+      create: {
+        shop: session.shop,
+        elkoApiKey,
+        locationId: existingConfig?.locationId || null,
+        existingProductBehavior: existingConfig?.existingProductBehavior || "skip"
+      },
+    });
+
+    return { status: "success", intent: "save_module_settings" };
+  }
+
+  if (intent === "save_import_settings") {
+    const locationId = String(formData.get("locationId") || "");
+    const existingProductBehavior = String(formData.get("existingProductBehavior") || "skip");
+
+    const existingConfig = await prisma.storeConfiguration.findUnique({
+      where: { shop: session.shop },
+    });
+
+    await prisma.storeConfiguration.upsert({
+      where: { shop: session.shop },
+      update: { locationId, existingProductBehavior },
+      create: {
+        shop: session.shop,
+        elkoApiKey: existingConfig?.elkoApiKey || "",
+        locationId,
+        existingProductBehavior
+      },
+    });
+
+    return { status: "success", intent: "save_import_settings" };
+  }
+
+  return { status: "error", intent: "unknown" };
 };
 
 export default function Settings() {
@@ -173,8 +206,11 @@ export default function Settings() {
       <Layout>
         <Layout.Section>
           <BlockStack gap="500">
-            {actionData?.status === "success" && actionData?.intent === "save_settings" && (
-              <Banner tone="success" title="Settings saved" />
+            {actionData?.status === "success" && actionData?.intent === "save_module_settings" && (
+              <Banner tone="success" title="Module settings saved" />
+            )}
+            {actionData?.status === "success" && actionData?.intent === "save_import_settings" && (
+              <Banner tone="success" title="Import settings saved" />
             )}
             {actionData?.status === "success" && actionData?.intent === "save_mappings" && (
               <Banner tone="success" title="Attribute mappings saved" />
@@ -182,43 +218,85 @@ export default function Settings() {
             {actionData?.status === "success" && actionData?.intent === "initialize_metafields" && (
               <Banner tone="success" title="Metafields initialized successfully" />
             )}
+
             <Card>
-              <Form method="post">
-                <BlockStack gap="300">
-                  <TextField
-                    label="Elko API Key"
-                    name="elkoApiKey"
-                    value={apiKey}
-                    onChange={handleChange}
-                    autoComplete="off"
-                  />
-                  <Select
-                    label="Import Location"
-                    name="locationId"
-                    options={locationOptions}
-                    onChange={handleLocationChange}
-                    value={selectedLocation}
-                    helpText="Select the location where imported products will be stocked. Defaults to the first location if not specified."
-                  />
-                  <Select
-                    label="Import setting for existing products"
-                    name="existingProductBehavior"
-                    options={existingProductBehaviorOptions}
-                    onChange={handleExistingProductBehaviorChange}
-                    value={selectedExistingProductBehavior}
-                    helpText="Choose how to handle products that have already been imported."
-                  />
-                  <Button submit variant="primary">
-                    Save Settings
-                  </Button>
-                </BlockStack>
-              </Form>
+              <BlockStack gap="300">
+                <Text as="h2" variant="headingMd">
+                  Module Settings
+                </Text>
+                <Form method="post">
+                  <input type="hidden" name="intent" value="save_module_settings" />
+                  <BlockStack gap="300">
+                    <TextField
+                      label="Elko API Key"
+                      name="elkoApiKey"
+                      value={apiKey}
+                      onChange={handleChange}
+                      autoComplete="off"
+                    />
+                    <div style={{ marginTop: "0.5rem" }}>
+                      <Button submit variant="primary">
+                        Save
+                      </Button>
+                    </div>
+                  </BlockStack>
+                </Form>
+              </BlockStack>
+            </Card>
+
+            <Card>
+              <BlockStack gap="200">
+                <Text as="h2" variant="headingMd">
+                  Initialize Shopify Metafields
+                </Text>
+                <Text as="p" variant="bodyMd">
+                  Ensure the required metafield definitions exist for Elko integration.
+                </Text>
+                <Form method="post">
+                  <input type="hidden" name="intent" value="initialize_metafields" />
+                  <Button submit>Initialize Shopify Metafields</Button>
+                </Form>
+              </BlockStack>
+            </Card>
+
+            <Card>
+              <BlockStack gap="300">
+                <Text as="h2" variant="headingMd">
+                  Product Import Settings
+                </Text>
+                <Form method="post">
+                  <input type="hidden" name="intent" value="save_import_settings" />
+                  <BlockStack gap="300">
+                    <Select
+                      label="Product Import stock location"
+                      name="locationId"
+                      options={locationOptions}
+                      onChange={handleLocationChange}
+                      value={selectedLocation}
+                      helpText="Select the location where imported products will be stocked. Defaults to the first location if not specified."
+                    />
+                    <Select
+                      label="Import setting for existing products"
+                      name="existingProductBehavior"
+                      options={existingProductBehaviorOptions}
+                      onChange={handleExistingProductBehaviorChange}
+                      value={selectedExistingProductBehavior}
+                      helpText="Choose how to handle products that have already been imported."
+                    />
+                    <div style={{ marginTop: "0.5rem" }}>
+                      <Button submit variant="primary">
+                        Save
+                      </Button>
+                    </div>
+                  </BlockStack>
+                </Form>
+              </BlockStack>
             </Card>
 
             <Card>
               <BlockStack gap="400">
                 <Text as="h2" variant="headingMd">
-                  Product Attribute Mapping
+                  Product Import attribute mapping
                 </Text>
                 <Text as="p" variant="bodyMd">
                   Map ELKO product attributes to Shopify Metafields.
@@ -289,21 +367,6 @@ export default function Settings() {
                         </Button>
                     </div>
                   </BlockStack>
-                </Form>
-              </BlockStack>
-            </Card>
-
-            <Card>
-              <BlockStack gap="200">
-                <Text as="h2" variant="headingMd">
-                  Initialize Shopify Metafields
-                </Text>
-                <Text as="p" variant="bodyMd">
-                  Ensure the required metafield definitions exist for Elko integration.
-                </Text>
-                <Form method="post">
-                  <input type="hidden" name="intent" value="initialize_metafields" />
-                  <Button submit>Initialize Shopify Metafields</Button>
                 </Form>
               </BlockStack>
             </Card>

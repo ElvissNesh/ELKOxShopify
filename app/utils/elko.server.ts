@@ -45,6 +45,9 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
     // Fetch mappings for the current shop
     const mappings = await prisma.attributeMapping.findMany({ where: { shop } });
 
+    const existingProductBehavior = storeConfig.existingProductBehavior || "skip";
+    console.log(`Behavior for existing products: ${existingProductBehavior}`);
+
     // Step A (Fetcher): Fetch data from ELKO
     // Using a POST request or GET with params as specified. Prompt says "append repeating query parameters".
     const elkoUrl = new URL("https://api.elko.cloud/v3.0/api/Catalog/Products");
@@ -141,7 +144,12 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
         };
 
         if (existingProduct) {
-           console.log(`Updating existing product: ${productId}`);
+           if (existingProductBehavior === "skip") {
+               console.log(`Skipping existing product: ${productId} (Behavior is set to 'skip')`);
+               continue;
+           }
+
+           console.log(`Updating existing product: ${productId} (Behavior is set to '${existingProductBehavior}')`);
            // Update existing product
            const updateResponse = await admin.graphql(
              `mutation productUpdate($input: ProductInput!) {
@@ -302,7 +310,9 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
         if (variantId) {
              // Update price
              const price = productData.discountPrice || productData.price;
-             if (price) {
+             const shouldUpdatePrice = !existingProduct || existingProductBehavior !== "update_except_price";
+
+             if (price && shouldUpdatePrice) {
                   console.log(`Updating price to: ${price}`);
                   await admin.graphql(
                     `mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {

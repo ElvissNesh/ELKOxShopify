@@ -45,6 +45,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return {
     elkoApiKey: storeConfiguration?.elkoApiKey || "",
     locationId: storeConfiguration?.locationId || "",
+    existingProductBehavior: storeConfiguration?.existingProductBehavior || "skip",
     locations,
     attributeMappings,
   };
@@ -96,21 +97,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   const elkoApiKey = String(formData.get("elkoApiKey") || "");
   const locationId = String(formData.get("locationId") || "");
+  const existingProductBehavior = String(formData.get("existingProductBehavior") || "skip");
 
   await prisma.storeConfiguration.upsert({
     where: { shop: session.shop },
-    update: { elkoApiKey, locationId },
-    create: { shop: session.shop, elkoApiKey, locationId },
+    update: { elkoApiKey, locationId, existingProductBehavior },
+    create: { shop: session.shop, elkoApiKey, locationId, existingProductBehavior },
   });
 
   return { status: "success", intent: "save_settings" };
 };
 
 export default function Settings() {
-  const { elkoApiKey, locationId, locations, attributeMappings } = useLoaderData<typeof loader>();
+  const { elkoApiKey, locationId, existingProductBehavior, locations, attributeMappings } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [apiKey, setApiKey] = useState(elkoApiKey);
   const [selectedLocation, setSelectedLocation] = useState(locationId);
+  const [selectedExistingProductBehavior, setSelectedExistingProductBehavior] = useState(existingProductBehavior);
 
   // State for Attribute Mappings
   const [mappings, setMappings] = useState<
@@ -126,6 +129,7 @@ export default function Settings() {
 
   const handleChange = useCallback((newValue: string) => setApiKey(newValue), []);
   const handleLocationChange = useCallback((newValue: string) => setSelectedLocation(newValue), []);
+  const handleExistingProductBehaviorChange = useCallback((newValue: string) => setSelectedExistingProductBehavior(newValue), []);
 
   const handleMappingChange = (index: number, field: keyof typeof mappings[0], value: string) => {
     const newMappings = [...mappings];
@@ -156,6 +160,12 @@ export default function Settings() {
   const locationOptions = [
     { label: "Select a location", value: "" },
     ...locations.map((loc: { id: string; name: string }) => ({ label: loc.name, value: loc.id })),
+  ];
+
+  const existingProductBehaviorOptions = [
+    { label: "Skip existing products", value: "skip" },
+    { label: "Update products", value: "update_all" },
+    { label: "Update all except price", value: "update_except_price" },
   ];
 
   return (
@@ -189,6 +199,14 @@ export default function Settings() {
                     onChange={handleLocationChange}
                     value={selectedLocation}
                     helpText="Select the location where imported products will be stocked. Defaults to the first location if not specified."
+                  />
+                  <Select
+                    label="Import setting for existing products"
+                    name="existingProductBehavior"
+                    options={existingProductBehaviorOptions}
+                    onChange={handleExistingProductBehaviorChange}
+                    value={selectedExistingProductBehavior}
+                    helpText="Choose how to handle products that have already been imported."
                   />
                   <Button submit variant="primary">
                     Save Settings

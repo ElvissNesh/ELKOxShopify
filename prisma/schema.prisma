@@ -38,6 +38,7 @@ model StoreConfiguration {
   shop        String @unique
   elkoApiKey  String
   locationId  String?
+  existingProductBehavior String @default("skip")
 }
 
 model AttributeMapping {

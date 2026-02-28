@@ -46,6 +46,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     elkoApiKey: storeConfiguration?.elkoApiKey || "",
     locationId: storeConfiguration?.locationId || "",
     existingProductBehavior: storeConfiguration?.existingProductBehavior || "skip",
+    importedProductStatus: storeConfiguration?.importedProductStatus || "DRAFT",
     locations,
     attributeMappings,
   };
@@ -109,7 +110,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         shop: session.shop,
         elkoApiKey,
         locationId: existingConfig?.locationId || null,
-        existingProductBehavior: existingConfig?.existingProductBehavior || "skip"
+        existingProductBehavior: existingConfig?.existingProductBehavior || "skip",
+        importedProductStatus: existingConfig?.importedProductStatus || "DRAFT"
       },
     });
 
@@ -119,6 +121,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (intent === "save_import_settings") {
     const locationId = String(formData.get("locationId") || "");
     const existingProductBehavior = String(formData.get("existingProductBehavior") || "skip");
+    const importedProductStatus = String(formData.get("importedProductStatus") || "DRAFT");
 
     const existingConfig = await prisma.storeConfiguration.findUnique({
       where: { shop: session.shop },
@@ -126,12 +129,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     await prisma.storeConfiguration.upsert({
       where: { shop: session.shop },
-      update: { locationId, existingProductBehavior },
+      update: { locationId, existingProductBehavior, importedProductStatus },
       create: {
         shop: session.shop,
         elkoApiKey: existingConfig?.elkoApiKey || "",
         locationId,
-        existingProductBehavior
+        existingProductBehavior,
+        importedProductStatus
       },
     });
 
@@ -142,11 +146,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function Settings() {
-  const { elkoApiKey, locationId, existingProductBehavior, locations, attributeMappings } = useLoaderData<typeof loader>();
+  const { elkoApiKey, locationId, existingProductBehavior, importedProductStatus, locations, attributeMappings } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [apiKey, setApiKey] = useState(elkoApiKey);
   const [selectedLocation, setSelectedLocation] = useState(locationId);
   const [selectedExistingProductBehavior, setSelectedExistingProductBehavior] = useState(existingProductBehavior);
+  const [selectedImportedProductStatus, setSelectedImportedProductStatus] = useState(importedProductStatus);
 
   // State for Attribute Mappings
   const [mappings, setMappings] = useState<
@@ -163,6 +168,7 @@ export default function Settings() {
   const handleChange = useCallback((newValue: string) => setApiKey(newValue), []);
   const handleLocationChange = useCallback((newValue: string) => setSelectedLocation(newValue), []);
   const handleExistingProductBehaviorChange = useCallback((newValue: string) => setSelectedExistingProductBehavior(newValue), []);
+  const handleImportedProductStatusChange = useCallback((newValue: string) => setSelectedImportedProductStatus(newValue), []);
 
   const handleMappingChange = (index: number, field: keyof typeof mappings[0], value: string) => {
     const newMappings = [...mappings];
@@ -199,6 +205,11 @@ export default function Settings() {
     { label: "Skip existing products", value: "skip" },
     { label: "Update products", value: "update_all" },
     { label: "Update all except price", value: "update_except_price" },
+  ];
+
+  const importedProductStatusOptions = [
+    { label: "Active", value: "ACTIVE" },
+    { label: "Draft", value: "DRAFT" },
   ];
 
   return (
@@ -282,6 +293,14 @@ export default function Settings() {
                       onChange={handleExistingProductBehaviorChange}
                       value={selectedExistingProductBehavior}
                       helpText="Choose how to handle products that have already been imported."
+                    />
+                    <Select
+                      label="Imported product status"
+                      name="importedProductStatus"
+                      options={importedProductStatusOptions}
+                      onChange={handleImportedProductStatusChange}
+                      value={selectedImportedProductStatus}
+                      helpText="Select the status for newly imported products."
                     />
                     <div style={{ marginTop: "0.5rem" }}>
                       <Button submit variant="primary">

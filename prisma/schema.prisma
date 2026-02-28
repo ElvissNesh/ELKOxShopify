@@ -34,11 +34,12 @@ model Session {
 }
 
 model StoreConfiguration {
-  id          String @id @default(uuid())
-  shop        String @unique
-  elkoApiKey  String
-  locationId  String?
-  existingProductBehavior String @default("skip")
+  id                      String  @id @default(uuid())
+  shop                    String  @unique
+  elkoApiKey              String
+  locationId              String?
+  existingProductBehavior String  @default("skip")
+  importedProductStatus   String  @default("DRAFT")
 }
 
 model AttributeMapping {

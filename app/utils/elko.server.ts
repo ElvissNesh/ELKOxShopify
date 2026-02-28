@@ -46,7 +46,9 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
     const mappings = await prisma.attributeMapping.findMany({ where: { shop } });
 
     const existingProductBehavior = storeConfig.existingProductBehavior || "skip";
+    const importedProductStatus = storeConfig.importedProductStatus || "DRAFT";
     console.log(`Behavior for existing products: ${existingProductBehavior}`);
+    console.log(`Status for new products: ${importedProductStatus}`);
 
     // Step A (Fetcher): Fetch data from ELKO
     // Using a POST request or GET with params as specified. Prompt says "append repeating query parameters".
@@ -179,6 +181,9 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
             }
         } else {
           console.log(`Creating new product for ELKO code: ${elkoCode}`);
+          // Set status for new products
+          productInput.status = importedProductStatus;
+
           // Create new product
           const createResponse = await admin.graphql(
             `mutation productCreate($input: ProductInput!) {

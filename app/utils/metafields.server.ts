@@ -15,8 +15,8 @@ export const CREATE_METAFIELD_DEFINITION_MUTATION = `
 `;
 
 export const UPDATE_METAFIELD_DEFINITION_MUTATION = `
-  mutation UpdateMetafieldDefinition($id: ID!, $definition: MetafieldDefinitionUpdateInput!) {
-    metafieldDefinitionUpdate(id: $id, definition: $definition) {
+  mutation UpdateMetafieldDefinition($definition: MetafieldDefinitionUpdateInput!) {
+    metafieldDefinitionUpdate(definition: $definition) {
       updatedDefinition {
         id
         name
@@ -91,8 +91,10 @@ export async function createElkoMetafieldDefinitions(admin: any) {
       // Update existing definition to ensure capabilities are correct
       const updateResponse = await admin.graphql(UPDATE_METAFIELD_DEFINITION_MUTATION, {
         variables: {
-          id: existingId,
           definition: {
+            namespace: definition.namespace,
+            key: definition.key,
+            ownerType: definition.ownerType,
             description: definition.description,
             name: definition.name,
             pin: definition.pin,

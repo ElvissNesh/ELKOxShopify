@@ -114,14 +114,13 @@ export default function Settings() {
 
   // State for Attribute Mappings
   const [mappings, setMappings] = useState<
-    Array<{ id: string; shopifyNamespace: string; shopifyKey: string; elkoAttribute: string; customElkoAttribute: string }>
+    Array<{ id: string; shopifyNamespace: string; shopifyKey: string; elkoAttribute: string }>
   >(
     attributeMappings.map((m: { id: string; shopifyNamespace: string; shopifyKey: string; elkoAttribute: string }) => ({
       id: m.id,
       shopifyNamespace: m.shopifyNamespace,
       shopifyKey: m.shopifyKey,
-      elkoAttribute: ["warranty", "manufacturerCode", "ean"].includes(m.elkoAttribute) ? m.elkoAttribute : "other",
-      customElkoAttribute: ["warranty", "manufacturerCode", "ean"].includes(m.elkoAttribute) ? "" : m.elkoAttribute,
+      elkoAttribute: m.elkoAttribute,
     }))
   );
 
@@ -143,8 +142,7 @@ export default function Settings() {
         id: `temp-${Date.now()}`,
         shopifyNamespace: "",
         shopifyKey: "",
-        elkoAttribute: "warranty",
-        customElkoAttribute: "",
+        elkoAttribute: "",
       },
     ]);
   };
@@ -154,13 +152,6 @@ export default function Settings() {
     newMappings.splice(index, 1);
     setMappings(newMappings);
   };
-
-  const elkoAttributeOptions = [
-    { label: "Warranty", value: "warranty" },
-    { label: "Manufacturer Code", value: "manufacturerCode" },
-    { label: "EAN", value: "ean" },
-    { label: "Other (Custom)", value: "other" },
-  ];
 
   const locationOptions = [
     { label: "Select a location", value: "" },
@@ -224,7 +215,7 @@ export default function Settings() {
                       mappings.map((m) => ({
                         shopifyNamespace: m.shopifyNamespace,
                         shopifyKey: m.shopifyKey,
-                        elkoAttribute: m.elkoAttribute === "other" ? m.customElkoAttribute : m.elkoAttribute,
+                        elkoAttribute: m.elkoAttribute,
                       }))
                     )}
                   />
@@ -251,24 +242,13 @@ export default function Settings() {
                           />
                         </div>
                         <div style={{ flex: 1 }}>
-                          <Select
+                          <TextField
                             label="ELKO Attribute"
-                            options={elkoAttributeOptions}
                             value={mapping.elkoAttribute}
                             onChange={(val) => handleMappingChange(index, "elkoAttribute", val)}
+                            autoComplete="off"
+                            placeholder="fullDsc"
                           />
-                          {mapping.elkoAttribute === "other" && (
-                            <div style={{ marginTop: "0.5rem" }}>
-                              <TextField
-                                label="Custom ELKO Key"
-                                value={mapping.customElkoAttribute}
-                                onChange={(val) => handleMappingChange(index, "customElkoAttribute", val)}
-                                autoComplete="off"
-                                placeholder="fullDsc"
-                                labelHidden
-                              />
-                            </div>
-                          )}
                         </div>
                         <div style={{ paddingTop: "24px" }}>
                             <Button

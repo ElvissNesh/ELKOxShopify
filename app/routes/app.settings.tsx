@@ -266,17 +266,19 @@ export default function Settings() {
     }))
   );
 
-  const handleCatMappingChange = (index: number, field: keyof typeof catMappings[0], value: any) => {
-    const newMappings = [...catMappings];
-    if (newMappings[index]) {
-      newMappings[index] = { ...newMappings[index], [field]: value };
-      setCatMappings(newMappings);
-    }
-  };
+  const handleCatMappingChange = useCallback((index: number, field: keyof typeof catMappings[0], value: any) => {
+    setCatMappings(prev => {
+      const newMappings = [...prev];
+      if (newMappings[index]) {
+        newMappings[index] = { ...newMappings[index], [field]: value };
+      }
+      return newMappings;
+    });
+  }, []);
 
   const addCatMapping = () => {
-    setCatMappings([
-      ...catMappings,
+    setCatMappings(prev => [
+      ...prev,
       {
         id: `temp-cat-${Date.now()}`,
         elkoCatalogCode: "",
@@ -290,9 +292,11 @@ export default function Settings() {
   };
 
   const removeCatMapping = (index: number) => {
-    const newMappings = [...catMappings];
-    newMappings.splice(index, 1);
-    setCatMappings(newMappings);
+    setCatMappings(prev => {
+      const newMappings = [...prev];
+      newMappings.splice(index, 1);
+      return newMappings;
+    });
   };
 
   // Debounce taxonomy search
@@ -315,7 +319,7 @@ export default function Settings() {
         handleCatMappingChange(index, "isLoading", false);
       }
     },
-    [catMappings] // ensure we have access to current mappings state, although we update via index
+    [handleCatMappingChange]
   );
 
   const updateSearchString = useCallback(
@@ -334,21 +338,27 @@ export default function Settings() {
       // but for this standard React example, we'll just fire the request.
       performTaxonomySearch(index, newValue);
     },
-    [performTaxonomySearch]
+    [handleCatMappingChange, performTaxonomySearch]
   );
 
-  const handleTaxonomySelect = (index: number, selectedValue: string[]) => {
+  const handleTaxonomySelect = useCallback((index: number, selectedValue: string[]) => {
     if (selectedValue.length > 0) {
       const selectedId = selectedValue[0];
-      const selectedOption = catMappings[index].options.find(opt => opt.value === selectedId);
-
-      if (selectedOption) {
-        handleCatMappingChange(index, "shopifyTaxonomyId", selectedId);
-        handleCatMappingChange(index, "taxonomyFullName", selectedOption.label);
-        handleCatMappingChange(index, "searchString", selectedOption.label);
-      }
+      setCatMappings(prev => {
+        const newMappings = [...prev];
+        const selectedOption = newMappings[index].options.find(opt => opt.value === selectedId);
+        if (selectedOption) {
+          newMappings[index] = {
+            ...newMappings[index],
+            shopifyTaxonomyId: selectedId,
+            taxonomyFullName: selectedOption.label,
+            searchString: selectedOption.label,
+          };
+        }
+        return newMappings;
+      });
     }
-  };
+  }, []);
 
   const handleMappingChange = (index: number, field: keyof typeof mappings[0], value: string) => {
     const newMappings = [...mappings];
@@ -518,49 +528,45 @@ export default function Settings() {
                   />
 
                   <BlockStack gap="400">
-                    {catMappings.map((mapping, index) => {
-                      const textField = (
-                        <Autocomplete.TextField
-                          onChange={(val) => updateSearchString(index, val)}
-                          label="Shopify Standard Category"
-                          value={mapping.searchString}
-                          placeholder="Search for a category (e.g., Home Appliances > Kettles)"
-                          autoComplete="off"
-                        />
-                      );
-
-                      return (
-                        <InlineStack key={mapping.id} gap="300" align="start" blockAlign="center">
-                          <div style={{ flex: 1 }}>
-                            <TextField
-                              label="ELKO Catalog Code"
-                              value={mapping.elkoCatalogCode}
-                              onChange={(val) => handleCatMappingChange(index, "elkoCatalogCode", val)}
-                              autoComplete="off"
-                              placeholder="KET"
-                            />
-                          </div>
-                          <div style={{ flex: 2 }}>
-                            <Autocomplete
-                              options={mapping.options}
-                              selected={mapping.shopifyTaxonomyId ? [mapping.shopifyTaxonomyId] : []}
-                              onSelect={(val) => handleTaxonomySelect(index, val)}
-                              textField={textField}
-                              loading={mapping.isLoading}
-                            />
-                          </div>
-                          <div style={{ paddingTop: "24px" }}>
-                              <Button
-                                  icon={DeleteIcon}
-                                  onClick={() => removeCatMapping(index)}
-                                  accessibilityLabel="Remove category mapping"
-                                  tone="critical"
-                                  variant="plain"
+                    {catMappings.map((mapping, index) => (
+                      <InlineStack key={mapping.id} gap="300" align="start" blockAlign="center">
+                        <div style={{ flex: 1 }}>
+                          <TextField
+                            label="ELKO Catalog Code"
+                            value={mapping.elkoCatalogCode}
+                            onChange={(val) => handleCatMappingChange(index, "elkoCatalogCode", val)}
+                            autoComplete="off"
+                            placeholder="KET"
+                          />
+                        </div>
+                        <div style={{ flex: 2 }}>
+                          <Autocomplete
+                            options={mapping.options}
+                            selected={mapping.shopifyTaxonomyId ? [mapping.shopifyTaxonomyId] : []}
+                            onSelect={(val) => handleTaxonomySelect(index, val)}
+                            textField={
+                              <Autocomplete.TextField
+                                onChange={(val) => updateSearchString(index, val)}
+                                label="Shopify Standard Category"
+                                value={mapping.searchString}
+                                placeholder="Search for a category (e.g., Home Appliances > Kettles)"
+                                autoComplete="off"
                               />
-                          </div>
-                        </InlineStack>
-                      );
-                    })}
+                            }
+                            loading={mapping.isLoading}
+                          />
+                        </div>
+                        <div style={{ paddingTop: "24px" }}>
+                            <Button
+                                icon={DeleteIcon}
+                                onClick={() => removeCatMapping(index)}
+                                accessibilityLabel="Remove category mapping"
+                                tone="critical"
+                                variant="plain"
+                            />
+                        </div>
+                      </InlineStack>
+                    ))}
 
                     <Button onClick={addCatMapping} variant="secondary">
                       Add mapping

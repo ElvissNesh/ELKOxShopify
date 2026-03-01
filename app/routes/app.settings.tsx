@@ -40,9 +40,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       try {
         const res = await admin.graphql(
           `#graphql
-          query getTaxonomyNode($id: ID!) {
+          query getTaxonomyCategoryNode($id: ID!) {
             node(id: $id) {
-              ... on ProductTaxonomyNode {
+              ... on TaxonomyCategory {
                 id
                 fullName
               }

@@ -6,27 +6,34 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
   const query = url.searchParams.get("query") || "";
 
-  // Query Shopify's productTaxonomyNodes endpoint (API version 2025-10)
-  // Searching for categories based on user's query
+  // Query Shopify's taxonomy categories endpoint (API version 2025-10)
+  // Searching for categories based on user's query using the new taxonomy API
   const response = await admin.graphql(
     `#graphql
-      query getTaxonomyNodes($query: String!) {
-        productTaxonomyNodes(first: 20, query: $query) {
-          nodes {
-            id
-            fullName
+      query getTaxonomyCategories($search: String!) {
+        taxonomy {
+          categories(first: 20, search: $search) {
+            nodes {
+              id
+              fullName
+            }
           }
         }
       }`,
     {
       variables: {
-        query: query ? `${query}*` : "", // simple prefix search if query exists
+        search: query ? `${query}` : "",
       },
     }
   );
 
-  const json = await response.json();
-  const nodes = json.data?.productTaxonomyNodes?.nodes || [];
+  const json: any = await response.json();
+
+  if (json.errors) {
+    console.error("GraphQL errors fetching taxonomy:", JSON.stringify(json.errors));
+  }
+
+  const nodes = json.data?.taxonomy?.categories?.nodes || [];
 
   return Response.json({ nodes });
 };

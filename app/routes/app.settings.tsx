@@ -161,7 +161,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   if (intent === "save_category_mappings") {
     const mappingsJson = String(formData.get("categoryMappings") || "[]");
-    let categoryMappings: Array<{ elkoCatalogCode: string; shopifyTaxonomyId: string }> = [];
+    let categoryMappings: Array<{ elkoCatalogCode: string; shopifyTaxonomyId: string; shopifyCustomTags: string }> = [];
     try {
       categoryMappings = JSON.parse(mappingsJson);
     } catch (e) {
@@ -220,6 +220,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             shop: session.shop,
             elkoCatalogCode: m.elkoCatalogCode,
             shopifyTaxonomyId: m.shopifyTaxonomyId,
+            shopifyCustomTags: m.shopifyCustomTags || "",
           })),
         });
       }
@@ -282,7 +283,7 @@ export default function Settings() {
 
   // State for Category Mappings
   const [catMappings, setCatMappings] = useState<
-    Array<{ id: string; elkoCatalogCode: string; elkoCatalogCodeInput: string; shopifyTaxonomyId: string; taxonomyFullName: string; searchString: string; options: Array<{value: string, label: string}>; isLoading: boolean }>
+    Array<{ id: string; elkoCatalogCode: string; elkoCatalogCodeInput: string; shopifyTaxonomyId: string; taxonomyFullName: string; searchString: string; options: Array<{value: string, label: string}>; isLoading: boolean; shopifyCustomTags: string; shopifyCustomTagsInput: string }>
   >(
     categoryMappings.map((m: any) => ({
       id: m.id,
@@ -293,6 +294,8 @@ export default function Settings() {
       searchString: m.taxonomyFullName, // Initial search string is the full name
       options: [],
       isLoading: false,
+      shopifyCustomTags: m.shopifyCustomTags || "",
+      shopifyCustomTagsInput: "",
     }))
   );
 
@@ -318,6 +321,8 @@ export default function Settings() {
         searchString: "",
         options: [],
         isLoading: false,
+        shopifyCustomTags: "",
+        shopifyCustomTagsInput: "",
       },
     ]);
   };
@@ -342,6 +347,47 @@ export default function Settings() {
           elkoCatalogCodeInput: ""
         };
       }
+      return newMappings;
+    });
+  };
+
+  const handleCatMappingTagAdd = (index: number) => {
+    setCatMappings(prev => {
+      const newMappings = [...prev];
+      const mapping = newMappings[index];
+      const inputVal = mapping.shopifyCustomTagsInput.trim();
+
+      if (inputVal) {
+        // Parse input which could contain commas
+        const newTags = inputVal.split(',').map(t => t.trim()).filter(Boolean);
+        const existingTags = mapping.shopifyCustomTags ? mapping.shopifyCustomTags.split(',').map(t => t.trim()) : [];
+
+        // Add only unique tags
+        const combinedTags = Array.from(new Set([...existingTags, ...newTags]));
+
+        newMappings[index] = {
+          ...mapping,
+          shopifyCustomTags: combinedTags.join(', '),
+          shopifyCustomTagsInput: ""
+        };
+      }
+      return newMappings;
+    });
+  };
+
+  const handleCatMappingTagRemove = (index: number, tagToRemove: string) => {
+    setCatMappings(prev => {
+      const newMappings = [...prev];
+      const mapping = newMappings[index];
+      const existingTags = mapping.shopifyCustomTags ? mapping.shopifyCustomTags.split(',').map(t => t.trim()) : [];
+
+      const updatedTags = existingTags.filter(t => t !== tagToRemove);
+
+      newMappings[index] = {
+        ...mapping,
+        shopifyCustomTags: updatedTags.join(', ')
+      };
+
       return newMappings;
     });
   };
@@ -600,6 +646,7 @@ export default function Settings() {
                       catMappings.map((m) => ({
                         elkoCatalogCode: m.elkoCatalogCode,
                         shopifyTaxonomyId: m.shopifyTaxonomyId,
+                        shopifyCustomTags: m.shopifyCustomTags,
                       }))
                     )}
                   />
@@ -652,6 +699,35 @@ export default function Settings() {
                             }
                             loading={mapping.isLoading}
                           />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <BlockStack gap="200">
+                            <div onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ',') {
+                                  e.preventDefault();
+                                  handleCatMappingTagAdd(index);
+                                }
+                            }}>
+                              <TextField
+                                label="Shopify Custom Tags"
+                                value={mapping.shopifyCustomTagsInput}
+                                onChange={(val) => handleCatMappingChange(index, "shopifyCustomTagsInput", val)}
+                                onBlur={() => handleCatMappingTagAdd(index)}
+                                autoComplete="off"
+                                placeholder="Type tag and press Enter or comma"
+                                helpText="Press Enter to add multiple"
+                              />
+                            </div>
+                            {mapping.shopifyCustomTags && (
+                              <InlineStack gap="100" wrap>
+                                {mapping.shopifyCustomTags.split(',').map(t => t.trim()).filter(Boolean).map(tag => (
+                                  <Tag key={tag} onRemove={() => handleCatMappingTagRemove(index, tag)}>
+                                    {tag}
+                                  </Tag>
+                                ))}
+                              </InlineStack>
+                            )}
+                          </BlockStack>
                         </div>
                         <div style={{ paddingTop: "24px" }}>
                             <Button

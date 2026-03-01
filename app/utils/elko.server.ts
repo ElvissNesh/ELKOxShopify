@@ -49,7 +49,7 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
 
     // Cache category mappings for quick lookup by elkoCatalogCode
     // Handle comma-separated list of codes by splitting and storing each separately
-    const categoryMappingCache: Record<string, string> = {};
+    const categoryMappingCache: Record<string, { shopifyTaxonomyId: string; shopifyCustomTags: string }> = {};
     for (const mapping of categoryMappings) {
         if (!mapping.elkoCatalogCode) continue;
 
@@ -59,7 +59,10 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
             .filter(Boolean);
 
         for (const code of codes) {
-            categoryMappingCache[code] = mapping.shopifyTaxonomyId;
+            categoryMappingCache[code] = {
+                shopifyTaxonomyId: mapping.shopifyTaxonomyId,
+                shopifyCustomTags: mapping.shopifyCustomTags || ""
+            };
         }
     }
 
@@ -163,12 +166,19 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
           productType: productData.productType || "Imported",
         };
 
+        let customTagsToAdd: string[] = [];
+
         if (productData.catalog) {
             const normalizedCatalog = productData.catalog.trim().toLowerCase();
-            const mappedCategoryId = categoryMappingCache[normalizedCatalog];
-            if (mappedCategoryId) {
-                console.log(`Mapping ELKO catalog '${productData.catalog}' to Shopify category '${mappedCategoryId}'`);
-                productInput.category = mappedCategoryId;
+            const mappingData = categoryMappingCache[normalizedCatalog];
+            if (mappingData) {
+                console.log(`Mapping ELKO catalog '${productData.catalog}' to Shopify category '${mappingData.shopifyTaxonomyId}'`);
+                productInput.category = mappingData.shopifyTaxonomyId;
+
+                if (mappingData.shopifyCustomTags) {
+                    customTagsToAdd = mappingData.shopifyCustomTags.split(',').map(t => t.trim()).filter(Boolean);
+                    console.log(`Custom tags to add: ${customTagsToAdd.join(', ')}`);
+                }
             } else {
                 console.log(`No category mapping found for ELKO catalog '${productData.catalog}'`);
             }
@@ -181,6 +191,28 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
            }
 
            console.log(`Updating existing product: ${productId} (Behavior is set to '${existingProductBehavior}')`);
+
+           // Query existing tags to append new ones
+           if (customTagsToAdd.length > 0) {
+               const tagsResponse = await admin.graphql(
+                 `query getExistingTags($id: ID!) {
+                   product(id: $id) {
+                     tags
+                   }
+                 }`,
+                 {
+                   variables: { id: productId }
+                 }
+               );
+               const tagsJson = await tagsResponse.json();
+               const existingTags = tagsJson.data?.product?.tags || [];
+
+               // Merge and deduplicate tags
+               const mergedTags = Array.from(new Set([...existingTags, ...customTagsToAdd]));
+               productInput.tags = mergedTags;
+               console.log(`Merged tags for update: ${mergedTags.join(', ')}`);
+           }
+
            // Update existing product
            const updateResponse = await admin.graphql(
              `mutation productUpdate($input: ProductInput!) {
@@ -212,6 +244,11 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
           console.log(`Creating new product for ELKO code: ${elkoCode}`);
           // Set status for newly created product
           productInput.status = importedProductStatus;
+
+          if (customTagsToAdd.length > 0) {
+              productInput.tags = customTagsToAdd;
+              console.log(`Tags for new product: ${customTagsToAdd.join(', ')}`);
+          }
 
           // Create new product
           const createResponse = await admin.graphql(

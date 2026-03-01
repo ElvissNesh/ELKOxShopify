@@ -16,6 +16,7 @@ interface ElkoProduct {
   name?: string;
   description?: string;
   price?: string | number;
+  catalog?: string;
 }
 
 const parseQuantity = (val: string | number | undefined | null): number | undefined => {
@@ -44,6 +45,13 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
 
     // Fetch mappings for the current shop
     const mappings = await prisma.attributeMapping.findMany({ where: { shop } });
+    const categoryMappings = await prisma.categoryMapping.findMany({ where: { shop } });
+
+    // Cache category mappings for quick lookup by elkoCatalogCode
+    const categoryMappingCache: Record<string, string> = {};
+    for (const mapping of categoryMappings) {
+        categoryMappingCache[mapping.elkoCatalogCode] = mapping.shopifyTaxonomyId;
+    }
 
     const existingProductBehavior = storeConfig.existingProductBehavior || "skip";
     const importedProductStatus = storeConfig.importedProductStatus || "ACTIVE";
@@ -144,6 +152,16 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
           vendor: productData.vendor || "ELKO",
           productType: productData.productType || "Imported",
         };
+
+        if (productData.catalog) {
+            const mappedCategoryId = categoryMappingCache[productData.catalog];
+            if (mappedCategoryId) {
+                console.log(`Mapping ELKO catalog '${productData.catalog}' to Shopify category '${mappedCategoryId}'`);
+                productInput.category = mappedCategoryId;
+            } else {
+                console.log(`No category mapping found for ELKO catalog '${productData.catalog}'`);
+            }
+        }
 
         if (existingProduct) {
            if (existingProductBehavior === "skip") {

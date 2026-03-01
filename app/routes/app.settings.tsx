@@ -13,6 +13,7 @@ import {
   Text,
   InlineStack,
   Autocomplete,
+  Tag,
 } from "@shopify/polaris";
 import { DeleteIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
@@ -165,7 +166,35 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       categoryMappings = JSON.parse(mappingsJson);
     } catch (e) {
       console.error("Failed to parse category mappings JSON", e);
-      return { status: "error", intent: "save_category_mappings" };
+      return { status: "error", intent: "save_category_mappings", message: "Invalid JSON format." };
+    }
+
+    // Validation: Ensure no duplicate ELKO catalog codes across all mappings
+    const seenCodes = new Set();
+    let hasValidationError = false;
+    let validationErrorMessage = "";
+
+    for (const mapping of categoryMappings) {
+      if (!mapping.elkoCatalogCode || !mapping.shopifyTaxonomyId) continue;
+
+      const codes = mapping.elkoCatalogCode
+        .split(",")
+        .map((code) => code.trim().toLowerCase())
+        .filter(Boolean);
+
+      for (const code of codes) {
+        if (seenCodes.has(code)) {
+          hasValidationError = true;
+          validationErrorMessage = `Duplicate ELKO Catalog Code found: "${code}". A code can only be mapped to one Shopify Category.`;
+          break;
+        }
+        seenCodes.add(code);
+      }
+      if (hasValidationError) break;
+    }
+
+    if (hasValidationError) {
+      return { status: "error", intent: "save_category_mappings", message: validationErrorMessage };
     }
 
     // Delete existing mappings for this shop
@@ -175,7 +204,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     // Create new mappings
     if (categoryMappings.length > 0) {
-      // De-duplicate based on elkoCatalogCode before inserting to prevent unique constraint errors
+      // De-duplicate based on the full grouped string to prevent unique constraint errors on the exact same group
       const uniqueMappingsMap = new Map();
       categoryMappings
         .filter((m) => m.elkoCatalogCode && m.shopifyTaxonomyId)
@@ -253,11 +282,12 @@ export default function Settings() {
 
   // State for Category Mappings
   const [catMappings, setCatMappings] = useState<
-    Array<{ id: string; elkoCatalogCode: string; shopifyTaxonomyId: string; taxonomyFullName: string; searchString: string; options: Array<{value: string, label: string}>; isLoading: boolean }>
+    Array<{ id: string; elkoCatalogCode: string; elkoCatalogCodeInput: string; shopifyTaxonomyId: string; taxonomyFullName: string; searchString: string; options: Array<{value: string, label: string}>; isLoading: boolean }>
   >(
     categoryMappings.map((m: any) => ({
       id: m.id,
       elkoCatalogCode: m.elkoCatalogCode,
+      elkoCatalogCodeInput: "",
       shopifyTaxonomyId: m.shopifyTaxonomyId,
       taxonomyFullName: m.taxonomyFullName,
       searchString: m.taxonomyFullName, // Initial search string is the full name
@@ -282,6 +312,7 @@ export default function Settings() {
       {
         id: `temp-cat-${Date.now()}`,
         elkoCatalogCode: "",
+        elkoCatalogCodeInput: "",
         shopifyTaxonomyId: "",
         taxonomyFullName: "",
         searchString: "",
@@ -289,6 +320,47 @@ export default function Settings() {
         isLoading: false,
       },
     ]);
+  };
+
+  const handleCatMappingCodeAdd = (index: number) => {
+    setCatMappings(prev => {
+      const newMappings = [...prev];
+      const mapping = newMappings[index];
+      const inputVal = mapping.elkoCatalogCodeInput.trim();
+
+      if (inputVal) {
+        // Parse input which could contain commas
+        const newCodes = inputVal.split(',').map(c => c.trim()).filter(Boolean);
+        const existingCodes = mapping.elkoCatalogCode ? mapping.elkoCatalogCode.split(',').map(c => c.trim()) : [];
+
+        // Add only unique codes
+        const combinedCodes = Array.from(new Set([...existingCodes, ...newCodes]));
+
+        newMappings[index] = {
+          ...mapping,
+          elkoCatalogCode: combinedCodes.join(', '),
+          elkoCatalogCodeInput: ""
+        };
+      }
+      return newMappings;
+    });
+  };
+
+  const handleCatMappingCodeRemove = (index: number, codeToRemove: string) => {
+    setCatMappings(prev => {
+      const newMappings = [...prev];
+      const mapping = newMappings[index];
+      const existingCodes = mapping.elkoCatalogCode ? mapping.elkoCatalogCode.split(',').map(c => c.trim()) : [];
+
+      const updatedCodes = existingCodes.filter(c => c !== codeToRemove);
+
+      newMappings[index] = {
+        ...mapping,
+        elkoCatalogCode: updatedCodes.join(', ')
+      };
+
+      return newMappings;
+    });
   };
 
   const removeCatMapping = (index: number) => {
@@ -419,6 +491,11 @@ export default function Settings() {
             {actionData?.status === "success" && actionData?.intent === "save_category_mappings" && (
               <Banner tone="success" title="Category mappings saved" />
             )}
+            {actionData?.status === "error" && actionData?.intent === "save_category_mappings" && actionData?.message && (
+              <Banner tone="critical" title="Failed to save category mappings">
+                <Text as="p">{actionData.message}</Text>
+              </Banner>
+            )}
             {actionData?.status === "success" && actionData?.intent === "initialize_metafields" && (
               <Banner tone="success" title="Metafields initialized successfully" />
             )}
@@ -531,13 +608,33 @@ export default function Settings() {
                     {catMappings.map((mapping, index) => (
                       <InlineStack key={mapping.id} gap="300" align="start" blockAlign="center">
                         <div style={{ flex: 1 }}>
-                          <TextField
-                            label="ELKO Catalog Code"
-                            value={mapping.elkoCatalogCode}
-                            onChange={(val) => handleCatMappingChange(index, "elkoCatalogCode", val)}
-                            autoComplete="off"
-                            placeholder="KET"
-                          />
+                          <BlockStack gap="200">
+                            <div onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ',') {
+                                  e.preventDefault();
+                                  handleCatMappingCodeAdd(index);
+                                }
+                            }}>
+                              <TextField
+                                label="ELKO Catalog Codes"
+                                value={mapping.elkoCatalogCodeInput}
+                                onChange={(val) => handleCatMappingChange(index, "elkoCatalogCodeInput", val)}
+                                onBlur={() => handleCatMappingCodeAdd(index)}
+                                autoComplete="off"
+                                placeholder="Type code and press Enter or comma"
+                                helpText="Press Enter to add multiple"
+                              />
+                            </div>
+                            {mapping.elkoCatalogCode && (
+                              <InlineStack gap="100" wrap>
+                                {mapping.elkoCatalogCode.split(',').map(c => c.trim()).filter(Boolean).map(code => (
+                                  <Tag key={code} onRemove={() => handleCatMappingCodeRemove(index, code)}>
+                                    {code}
+                                  </Tag>
+                                ))}
+                              </InlineStack>
+                            )}
+                          </BlockStack>
                         </div>
                         <div style={{ flex: 2 }}>
                           <Autocomplete

@@ -1,0 +1,18 @@
+npm warn Unknown project config "shamefully-hoist". This will stop working in the next major version of npm.
+
+> start
+> react-router-serve ./build/server/index.js
+
+
+file:///app/node_modules/@shopify/src/server/shopify-app.ts:144
+    throw new ShopifyError(message);
+          ^
+Error: Detected an empty appUrl configuration, please make sure to set the necessary environment variables.
+If you're deploying your app, you can find more information at https://shopify.dev/docs/apps/launch/deployment/deploy-web-app/deploy-to-hosting-service#step-4-set-up-environment-variables
+    at deriveApi (file:///app/node_modules/@shopify/src/server/shopify-app.ts:144:11)
+    at shopifyApp (file:///app/node_modules/@shopify/src/server/shopify-app.ts:63:15)
+    at file:///app/build/server/index.js:23:17
+    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)
+    at run (/app/node_modules/@react-router/serve/dist/cli.js:86:21)

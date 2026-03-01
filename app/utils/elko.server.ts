@@ -48,9 +48,19 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
     const categoryMappings = await prisma.categoryMapping.findMany({ where: { shop } });
 
     // Cache category mappings for quick lookup by elkoCatalogCode
+    // Handle comma-separated list of codes by splitting and storing each separately
     const categoryMappingCache: Record<string, string> = {};
     for (const mapping of categoryMappings) {
-        categoryMappingCache[mapping.elkoCatalogCode] = mapping.shopifyTaxonomyId;
+        if (!mapping.elkoCatalogCode) continue;
+
+        const codes = mapping.elkoCatalogCode
+            .split(",")
+            .map(c => c.trim().toLowerCase())
+            .filter(Boolean);
+
+        for (const code of codes) {
+            categoryMappingCache[code] = mapping.shopifyTaxonomyId;
+        }
     }
 
     const existingProductBehavior = storeConfig.existingProductBehavior || "skip";
@@ -154,7 +164,8 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
         };
 
         if (productData.catalog) {
-            const mappedCategoryId = categoryMappingCache[productData.catalog];
+            const normalizedCatalog = productData.catalog.trim().toLowerCase();
+            const mappedCategoryId = categoryMappingCache[normalizedCatalog];
             if (mappedCategoryId) {
                 console.log(`Mapping ELKO catalog '${productData.catalog}' to Shopify category '${mappedCategoryId}'`);
                 productInput.category = mappedCategoryId;

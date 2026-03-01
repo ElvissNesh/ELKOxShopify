@@ -13,20 +13,24 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     if (!query || query.length < 2) {
       // Return top-level root categories if search is empty
       graphqlQuery = `query {
-        taxonomyNodes(first: 20) {
-          nodes {
-            id
-            fullName
+        taxonomy {
+          categories(first: 20) {
+            nodes {
+              id
+              fullName
+            }
           }
         }
       }`;
     } else {
       // Return categories matching search query
-      graphqlQuery = `query taxonomyNodes($query: String!) {
-        taxonomyNodes(first: 20, query: $query) {
-          nodes {
-            id
-            fullName
+      graphqlQuery = `query taxonomyCategories($query: String!) {
+        taxonomy {
+          categories(first: 20, query: $query) {
+            nodes {
+              id
+              fullName
+            }
           }
         }
       }`;
@@ -36,7 +40,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const response = await admin.graphql(graphqlQuery, { variables });
 
     const responseJson = await response.json();
-    const categories = responseJson.data?.taxonomyNodes?.nodes || [];
+    const categories = responseJson.data?.taxonomy?.categories?.nodes || [];
 
     return new Response(JSON.stringify({ categories }), {
       headers: { "Content-Type": "application/json" },

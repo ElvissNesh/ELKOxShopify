@@ -6,31 +6,37 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
   const query = url.searchParams.get("query") || "";
 
-  if (!query || query.length < 2) {
-    return new Response(JSON.stringify({ categories: [] }), {
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
   try {
-    const response = await admin.graphql(
-      `query taxonomyCategories($query: String!) {
-        taxonomyCategories(first: 20, query: $query) {
+    let graphqlQuery = "";
+    let variables = {};
+
+    if (!query || query.length < 2) {
+      // Return top-level root categories if search is empty
+      graphqlQuery = `query {
+        taxonomyNodes(first: 20) {
           nodes {
             id
             fullName
           }
         }
-      }`,
-      {
-        variables: {
-          query: query,
-        },
-      }
-    );
+      }`;
+    } else {
+      // Return categories matching search query
+      graphqlQuery = `query taxonomyNodes($query: String!) {
+        taxonomyNodes(first: 20, query: $query) {
+          nodes {
+            id
+            fullName
+          }
+        }
+      }`;
+      variables = { query: query };
+    }
+
+    const response = await admin.graphql(graphqlQuery, { variables });
 
     const responseJson = await response.json();
-    const categories = responseJson.data?.taxonomyCategories?.nodes || [];
+    const categories = responseJson.data?.taxonomyNodes?.nodes || [];
 
     return new Response(JSON.stringify({ categories }), {
       headers: { "Content-Type": "application/json" },

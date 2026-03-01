@@ -433,6 +433,12 @@ export default function Settings() {
                         fetcher.load(`/api/taxonomy?query=${encodeURIComponent(value)}`);
                       };
 
+                      const fetchInitialOptions = () => {
+                        if (!mapping.inputValue) {
+                          fetcher.load(`/api/taxonomy?query=`);
+                        }
+                      };
+
                       const options = fetcher.data?.categories?.map((cat: any) => ({
                         value: cat.id,
                         label: cat.fullName,
@@ -441,6 +447,7 @@ export default function Settings() {
                       const textField = (
                         <Autocomplete.TextField
                           onChange={updateText}
+                          onFocus={fetchInitialOptions}
                           label="Shopify Category"
                           value={mapping.inputValue}
                           prefix={<Icon source={SearchIcon} tone="base" />}
@@ -465,6 +472,11 @@ export default function Settings() {
                               }}
                               textField={textField}
                             />
+                            {mapping.shopifyCategoryName && mapping.shopifyCategoryId && (
+                                <Text as="p" tone="subdued" variant="bodySm">
+                                  Saved: {mapping.shopifyCategoryName}
+                                </Text>
+                            )}
                           </div>
                           <div style={{ flex: 1 }}>
                             <TextField

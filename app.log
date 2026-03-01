@@ -11,7 +11,7 @@ npm warn Unknown project config "shamefully-hoist". This will stop working in th
 
 Prisma schema loaded from prisma/schema.prisma
 
-✔ Generated Prisma Client (v6.19.2) to ./node_modules/@prisma/client in 117ms
+✔ Generated Prisma Client (v6.19.2) to ./node_modules/@prisma/client in 143ms
 
 Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
 
@@ -31,5 +31,4 @@ npm warn Unknown project config "shamefully-hoist". This will stop working in th
 > react-router-serve ./build/server/index.js
 
 [shopify-api/INFO] version 12.3.0, environment React Router
-[react-router-serve] http://localhost:3000 (http://192.168.0.2:3000)
-GET /app/settings 410 - - 44.576 ms
+[react-router-serve] http://localhost:35827 (http://192.168.0.2:35827)

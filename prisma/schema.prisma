@@ -50,3 +50,13 @@ model AttributeMapping {
   elkoAttribute    String
   metafieldType    String @default("single_line_text_field")
 }
+
+model CategoryMapping {
+  id                  String @id @default(uuid())
+  shop                String
+  elkoCategoryCode    String
+  shopifyCategoryId   String
+  shopifyCategoryName String
+
+  @@unique([shop, elkoCategoryCode])
+}

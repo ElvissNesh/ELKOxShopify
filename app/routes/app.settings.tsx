@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { useLoaderData, useActionData, Form } from "react-router";
+import { useLoaderData, useActionData, Form, useFetcher } from "react-router";
 import {
   Page,
   Layout,
@@ -12,8 +12,10 @@ import {
   BlockStack,
   Text,
   InlineStack,
+  Autocomplete,
+  Icon,
 } from "@shopify/polaris";
-import { DeleteIcon } from "@shopify/polaris-icons";
+import { DeleteIcon, SearchIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { createElkoMetafieldDefinitions } from "../utils/metafields.server";
@@ -26,6 +28,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   });
 
   const attributeMappings = await prisma.attributeMapping.findMany({
+    where: { shop: session.shop },
+  });
+
+  const categoryMappings = await prisma.categoryMapping.findMany({
     where: { shop: session.shop },
   });
 
@@ -49,6 +55,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     importedProductStatus: storeConfiguration?.importedProductStatus || "ACTIVE",
     locations,
     attributeMappings,
+    categoryMappings,
   };
 };
 
@@ -94,6 +101,44 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
 
     return { status: "success", intent: "save_mappings" };
+  }
+
+  if (intent === "save_category_mappings") {
+    const mappingsJson = String(formData.get("categoryMappings") || "[]");
+    let categoryMappings: Array<{ elkoCategoryCode: string; shopifyCategoryId: string; shopifyCategoryName: string }> = [];
+    try {
+      categoryMappings = JSON.parse(mappingsJson);
+    } catch (e) {
+      console.error("Failed to parse category mappings JSON", e);
+      return { status: "error", intent: "save_category_mappings", message: "Failed to parse JSON" };
+    }
+
+    // Check for duplicates in UI input
+    const elkoCodes = categoryMappings.map(m => m.elkoCategoryCode);
+    if (new Set(elkoCodes).size !== elkoCodes.length) {
+      return { status: "error", intent: "save_category_mappings", message: "Duplicate ELKO Category Codes are not allowed." };
+    }
+
+    // Delete existing mappings for this shop
+    await prisma.categoryMapping.deleteMany({
+      where: { shop: session.shop },
+    });
+
+    // Create new mappings
+    if (categoryMappings.length > 0) {
+      await prisma.categoryMapping.createMany({
+        data: categoryMappings
+          .filter((m) => m.elkoCategoryCode && m.shopifyCategoryId && m.shopifyCategoryName)
+          .map((m) => ({
+            shop: session.shop,
+            elkoCategoryCode: m.elkoCategoryCode,
+            shopifyCategoryId: m.shopifyCategoryId,
+            shopifyCategoryName: m.shopifyCategoryName,
+          })),
+      });
+    }
+
+    return { status: "success", intent: "save_category_mappings" };
   }
 
   if (intent === "save_module_settings") {
@@ -146,12 +191,55 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function Settings() {
-  const { elkoApiKey, locationId, existingProductBehavior, importedProductStatus, locations, attributeMappings } = useLoaderData<typeof loader>();
+  const { elkoApiKey, locationId, existingProductBehavior, importedProductStatus, locations, attributeMappings, categoryMappings } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [apiKey, setApiKey] = useState(elkoApiKey);
   const [selectedLocation, setSelectedLocation] = useState(locationId);
   const [selectedExistingProductBehavior, setSelectedExistingProductBehavior] = useState(existingProductBehavior);
   const [selectedImportedProductStatus, setSelectedImportedProductStatus] = useState(importedProductStatus);
+
+  // State for Category Mappings
+  const [catMappings, setCatMappings] = useState<
+    Array<{ id: string; elkoCategoryCode: string; shopifyCategoryId: string; shopifyCategoryName: string; inputValue: string }>
+  >(
+    categoryMappings.map((m: any) => ({
+      id: m.id,
+      elkoCategoryCode: m.elkoCategoryCode,
+      shopifyCategoryId: m.shopifyCategoryId,
+      shopifyCategoryName: m.shopifyCategoryName,
+      inputValue: m.shopifyCategoryName,
+    }))
+  );
+
+  // Fetcher for taxonomy search
+  const fetcher = useFetcher<any>();
+
+  const handleCategoryMappingChange = (index: number, field: keyof typeof catMappings[0], value: string) => {
+    const newMappings = [...catMappings];
+    if (newMappings[index]) {
+      newMappings[index] = { ...newMappings[index], [field]: value };
+      setCatMappings(newMappings);
+    }
+  };
+
+  const addCategoryMapping = () => {
+    setCatMappings([
+      ...catMappings,
+      {
+        id: `temp-${Date.now()}`,
+        elkoCategoryCode: "",
+        shopifyCategoryId: "",
+        shopifyCategoryName: "",
+        inputValue: "",
+      },
+    ]);
+  };
+
+  const removeCategoryMapping = (index: number) => {
+    const newMappings = [...catMappings];
+    newMappings.splice(index, 1);
+    setCatMappings(newMappings);
+  };
 
   // State for Attribute Mappings
   const [mappings, setMappings] = useState<
@@ -225,6 +313,9 @@ export default function Settings() {
             )}
             {actionData?.status === "success" && actionData?.intent === "save_mappings" && (
               <Banner tone="success" title="Attribute mappings saved" />
+            )}
+            {actionData?.status === "success" && actionData?.intent === "save_category_mappings" && (
+              <Banner tone="success" title="Category mappings saved" />
             )}
             {actionData?.status === "success" && actionData?.intent === "initialize_metafields" && (
               <Banner tone="success" title="Metafields initialized successfully" />
@@ -305,6 +396,110 @@ export default function Settings() {
                     <div style={{ marginTop: "0.5rem" }}>
                       <Button submit variant="primary">
                         Save
+                      </Button>
+                    </div>
+                  </BlockStack>
+                </Form>
+              </BlockStack>
+            </Card>
+
+            <Card>
+              <BlockStack gap="400">
+                <Text as="h2" variant="headingMd">
+                  Category Mapping
+                </Text>
+                <Text as="p" variant="bodyMd">
+                  Map ELKO Categories to Official Shopify Product Categories.
+                </Text>
+
+                <Form method="post">
+                  <input type="hidden" name="intent" value="save_category_mappings" />
+                  <input
+                    type="hidden"
+                    name="categoryMappings"
+                    value={JSON.stringify(
+                      catMappings.map((m) => ({
+                        elkoCategoryCode: m.elkoCategoryCode,
+                        shopifyCategoryId: m.shopifyCategoryId,
+                        shopifyCategoryName: m.shopifyCategoryName,
+                      }))
+                    )}
+                  />
+
+                  <BlockStack gap="400">
+                    {catMappings.map((mapping, index) => {
+                      const updateText = (value: string) => {
+                        handleCategoryMappingChange(index, "inputValue", value);
+                        fetcher.load(`/api/taxonomy?query=${encodeURIComponent(value)}`);
+                      };
+
+                      const options = fetcher.data?.categories?.map((cat: any) => ({
+                        value: cat.id,
+                        label: cat.fullName,
+                      })) || [];
+
+                      const textField = (
+                        <Autocomplete.TextField
+                          onChange={updateText}
+                          label="Shopify Category"
+                          value={mapping.inputValue}
+                          prefix={<Icon source={SearchIcon} tone="base" />}
+                          placeholder="Search Categories..."
+                          autoComplete="off"
+                        />
+                      );
+
+                      return (
+                        <InlineStack key={mapping.id} gap="300" align="start" blockAlign="center">
+                          <div style={{ flex: 1 }}>
+                            <Autocomplete
+                              options={options}
+                              selected={[mapping.shopifyCategoryId]}
+                              onSelect={(selected) => {
+                                const selectedOption = options.find((o: any) => o.value === selected[0]);
+                                if (selectedOption) {
+                                  handleCategoryMappingChange(index, "shopifyCategoryId", selectedOption.value);
+                                  handleCategoryMappingChange(index, "shopifyCategoryName", selectedOption.label);
+                                  handleCategoryMappingChange(index, "inputValue", selectedOption.label);
+                                }
+                              }}
+                              textField={textField}
+                            />
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <TextField
+                              label="ELKO Category Code"
+                              value={mapping.elkoCategoryCode}
+                              onChange={(val) => handleCategoryMappingChange(index, "elkoCategoryCode", val)}
+                              autoComplete="off"
+                              placeholder="102-01"
+                            />
+                          </div>
+                          <div style={{ paddingTop: "24px" }}>
+                            <Button
+                              icon={DeleteIcon}
+                              onClick={() => removeCategoryMapping(index)}
+                              accessibilityLabel="Remove mapping"
+                              tone="critical"
+                              variant="plain"
+                            />
+                          </div>
+                        </InlineStack>
+                      );
+                    })}
+
+                    {actionData?.status === "error" && actionData?.intent === "save_category_mappings" && (
+                      <Text as="p" tone="critical">
+                        {actionData.message}
+                      </Text>
+                    )}
+
+                    <Button onClick={addCategoryMapping} variant="secondary">
+                      Add Category Mapping
+                    </Button>
+                    <div style={{ marginTop: "1rem" }}>
+                      <Button submit variant="primary">
+                        Save Category Mappings
                       </Button>
                     </div>
                   </BlockStack>

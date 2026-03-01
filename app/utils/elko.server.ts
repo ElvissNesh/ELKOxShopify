@@ -44,6 +44,7 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
 
     // Fetch mappings for the current shop
     const mappings = await prisma.attributeMapping.findMany({ where: { shop } });
+    const categoryMappings = await prisma.categoryMapping.findMany({ where: { shop } });
 
     const existingProductBehavior = storeConfig.existingProductBehavior || "skip";
     const importedProductStatus = storeConfig.importedProductStatus || "ACTIVE";
@@ -144,6 +145,18 @@ export async function syncElkoProducts(shop: string, elkoIds: string[], admin: a
           vendor: productData.vendor || "ELKO",
           productType: productData.productType || "Imported",
         };
+
+        const elkoCategory = String(productData.catalog || productData.category || "");
+        if (elkoCategory) {
+           const mappedCategory = categoryMappings.find(m => m.elkoCategoryCode === elkoCategory);
+           if (mappedCategory) {
+              console.log(`Mapped ELKO category ${elkoCategory} to Shopify category ${mappedCategory.shopifyCategoryId}`);
+              // In API version 2024-04+, productCategory requires productTaxonomyNodeId
+              // The mutation requires category: ID or categoryId: ID depending on the exact schema structure in the given version
+              // According to Oct 2025 API, we can use categoryId (or productCategory -> productTaxonomyNodeId)
+              productInput.category = mappedCategory.shopifyCategoryId;
+           }
+        }
 
         if (existingProduct) {
            if (existingProductBehavior === "skip") {

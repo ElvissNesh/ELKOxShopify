@@ -1,0 +1,35 @@
+npm warn Unknown project config "shamefully-hoist". This will stop working in the next major version of npm.
+
+> docker-start
+> npm run setup && npm run start
+
+npm warn Unknown env config "shamefully-hoist". This will stop working in the next major version of npm.
+npm warn Unknown project config "shamefully-hoist". This will stop working in the next major version of npm.
+
+> setup
+> prisma generate && prisma migrate deploy
+
+Prisma schema loaded from prisma/schema.prisma
+
+✔ Generated Prisma Client (v6.19.2) to ./node_modules/@prisma/client in 117ms
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+
+Prisma schema loaded from prisma/schema.prisma
+Datasource "db": SQLite database "dev.sqlite" at "file:dev.sqlite"
+
+6 migrations found in prisma/migrations
+
+
+No pending migrations to apply.
+npm warn Unknown env config "shamefully-hoist". This will stop working in the next major version of npm.
+npm warn Unknown project config "shamefully-hoist". This will stop working in the next major version of npm.
+
+> start
+> react-router-serve ./build/server/index.js
+
+[shopify-api/INFO] version 12.3.0, environment React Router
+[react-router-serve] http://localhost:3000 (http://192.168.0.2:3000)
+GET /app/settings 410 - - 44.576 ms
